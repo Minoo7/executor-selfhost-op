@@ -14,14 +14,11 @@ on:
         default: false
   push:
     branches: [main]
-    paths: [patches/**, scripts/**, .github/workflows/build.yml]
+    paths: [patches/**, scripts/**, .depot/workflows/build.yml]
 
 permissions:
   contents: write
-  packages: write
   pull-requests: write
-  issues: write
-  id-token: write
 
 concurrency:
   group: build
@@ -29,23 +26,26 @@ concurrency:
 
 env:
   UPSTREAM: UsefulSoftwareCo/executor
-  IMAGE: ghcr.io/minoo7/executor-selfhost
+  IMAGE: 4z8l73c27s.registry.depot.dev/executor-selfhost
+  DEPOT_PROJECT: 5884x6f4tn
   GH_TOKEN: ${{ github.token }}
 
 jobs:
   build:
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 150
+    runs-on: depot-ubuntu-24.04-4
+    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
           path: op
 
+      - uses: depot/setup-action@v1
+
       - uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          registry: 4z8l73c27s.registry.depot.dev
+          username: x-token
+          password: ${{ secrets.DEPOT_API_KEY }}
 
       - name: Resolve upstream release
         id: rel
@@ -61,9 +61,8 @@ jobs:
           if [ "$FORCE" != true ]; then
             if docker manifest inspect "$IMAGE:$ver-op" >/dev/null 2>&1; then
               echo "::notice::$IMAGE:$ver-op already exists"; skip=true
-            elif git -C op ls-remote --exit-code origin "refs/heads/port/$ver" >/dev/null \
-              || [ -n "$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "in:title \"Port failed: $tag\"" --json number --jq '.[].number')" ]; then
-              echo "::notice::Port for $tag is already waiting on review"; skip=true
+            elif git -C op ls-remote --exit-code origin "refs/heads/port/$ver" "refs/heads/port-failed/$ver" >/dev/null; then
+              echo "::notice::Port for $tag is waiting on review (port/$ver or port-failed/$ver)"; skip=true
             fi
           fi
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
@@ -79,51 +78,33 @@ jobs:
         with:
           bun-version-file: src/package.json
 
-      - name: Apply patch and verify
+      - name: Apply patch, verify, build and push
         id: attempt
         if: steps.rel.outputs.skip != 'true'
         continue-on-error: true
         env:
           VER: ${{ steps.rel.outputs.ver }}
+          DEPOT_TOKEN: ${{ secrets.DEPOT_API_KEY }}
         run: |
           mkdir -p /tmp/sandcastle-input
           set -o pipefail
           {
             git -C src apply --3way "$GITHUB_WORKSPACE/op/patches/onepassword.patch" &&
             op/scripts/verify.sh src &&
-            docker build -f src/apps/host-selfhost/Dockerfile -t "$IMAGE:$VER-op" src
+            depot build --project "$DEPOT_PROJECT" --platform linux/arm64 \
+              -f src/apps/host-selfhost/Dockerfile -t "$IMAGE:$VER-op" -t "$IMAGE:latest" --push src
           } 2>&1 | tee /tmp/sandcastle-input/failure.log
-
-      - name: Push image
-        if: steps.attempt.outcome == 'success'
-        env:
-          VER: ${{ steps.rel.outputs.ver }}
-        run: |
-          docker tag "$IMAGE:$VER-op" "$IMAGE:latest"
-          docker push "$IMAGE:$VER-op"
-          docker push "$IMAGE:latest"
-
-      - name: Join tailnet for CLIProxyAPI
-        id: tailnet
-        if: steps.attempt.outcome == 'failure'
-        continue-on-error: true
-        uses: tailscale/github-action@v4
-        with:
-          oauth-client-id: T6BmGK8G1m11CNTRL-kthupAeTSJ11CNTRL
-          audience: api.tailscale.com/T6BmGK8G1m11CNTRL-kthupAeTSJ11CNTRL
-          tags: tag:executor-ci
 
       - name: Agent re-port
         id: agent
-        if: steps.attempt.outcome == 'failure' && steps.tailnet.outcome == 'success'
+        if: steps.attempt.outcome == 'failure'
         continue-on-error: true
         env:
           CPA_API_KEY: ${{ secrets.CPA_API_KEY }}
+          DEPOT_TOKEN: ${{ secrets.DEPOT_API_KEY }}
           TAG: ${{ steps.rel.outputs.tag }}
-          VER: ${{ steps.rel.outputs.ver }}
         run: |
           set -o pipefail
-          test -n "$CPA_API_KEY" || { echo "CPA_API_KEY secret missing"; exit 1; }
           curl -fsS -o /dev/null -H "Authorization: Bearer $CPA_API_KEY" https://cpa.planasolutions.ai/v1/models
           git -C src reset --quiet --hard && git -C src clean -qfdx
           base="$(git -C src rev-parse HEAD)"
@@ -136,7 +117,7 @@ jobs:
           (cd op && bun install --frozen-lockfile)
           bun op/.sandcastle/fix.mts "$GITHUB_WORKSPACE/src" "$TAG" 2>&1 | tee /tmp/agent.log
           op/scripts/verify.sh src
-          docker build -f src/apps/host-selfhost/Dockerfile -t "$IMAGE:$VER-op" src
+          depot build --project "$DEPOT_PROJECT" --platform linux/arm64 -f src/apps/host-selfhost/Dockerfile src
           git -C src diff "$base" -- . ':!bun.lock' > op/patches/onepassword.patch
 
       - name: Open PR with re-ported patch
@@ -153,22 +134,20 @@ jobs:
           git commit -m "fix: re-port 1Password patch to $TAG"
           git push origin "port/$VER"
           {
-            echo "The patch no longer applied cleanly to \`$TAG\`. A Sandcastle agent re-ported it; verify and image build passed in CI."
-            echo; echo "Merging this PR builds and publishes \`$IMAGE:$VER-op\`."
+            echo "The patch no longer applied cleanly to \`$TAG\`. A Sandcastle Codex agent re-ported it; verify and image build passed in CI."
+            echo; echo "Merging this PR publishes \`$IMAGE:$VER-op\`."
             echo; echo "<details><summary>Original failure</summary>"; echo; echo '```'
             tail -c 6000 /tmp/sandcastle-input/failure.log; echo '```'; echo "</details>"
           } > /tmp/body.md
           gh pr create --title "Re-port 1Password patch to $TAG" --body-file /tmp/body.md --head "port/$VER"
 
-      - name: Open issue
+      - name: Mark port failed
         if: steps.attempt.outcome == 'failure' && steps.agent.outcome != 'success'
         env:
-          TAG: ${{ steps.rel.outputs.tag }}
+          VER: ${{ steps.rel.outputs.ver }}
         run: |
-          {
-            echo "Patch failed on \`$TAG\` and the agent could not fix it. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-            echo; echo '```'; tail -c 6000 /tmp/sandcastle-input/failure.log; echo '```'
-            if [ -f /tmp/agent.log ]; then echo; echo "Agent tail:"; echo '```'; tail -c 4000 /tmp/agent.log; echo '```'; fi
-          } > /tmp/body.md
-          gh issue create -R "$GITHUB_REPOSITORY" --title "Port failed: $TAG" --body-file /tmp/body.md
+          git -C op push origin "HEAD:refs/heads/port-failed/$VER"
+          echo "::error::Patch failed on $VER and the agent could not fix it. Delete branch port-failed/$VER to retry."
+          tail -c 4000 /tmp/sandcastle-input/failure.log
+          if [ -f /tmp/agent.log ]; then tail -c 4000 /tmp/agent.log; fi
           exit 1
