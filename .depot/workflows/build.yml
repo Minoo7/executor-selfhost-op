@@ -28,7 +28,6 @@ env:
   UPSTREAM: UsefulSoftwareCo/executor
   IMAGE: 4z8l73c27s.registry.depot.dev/executor-selfhost
   DEPOT_PROJECT: 5884x6f4tn
-  GH_TOKEN: ${{ github.token }}
 
 jobs:
   build:
@@ -38,6 +37,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: op
+          persist-credentials: false
 
       - uses: depot/setup-action@v1
 
@@ -50,6 +50,7 @@ jobs:
       - name: Resolve upstream release
         id: rel
         env:
+          GH_TOKEN: ${{ github.token }}
           INPUT_TAG: ${{ inputs.tag }}
           FORCE: ${{ github.event_name == 'push' || inputs.force }}
         run: |
@@ -86,16 +87,16 @@ jobs:
           VER: ${{ steps.rel.outputs.ver }}
           DEPOT_TOKEN: ${{ secrets.DEPOT_API_KEY }}
         run: |
-          mkdir -p /tmp/sandcastle-input
+          mkdir -p /tmp/port
           set -o pipefail
           {
             git -C src apply --3way "$GITHUB_WORKSPACE/op/patches/onepassword.patch" &&
             op/scripts/verify.sh src &&
             depot build --project "$DEPOT_PROJECT" --platform linux/arm64 \
               -f src/apps/host-selfhost/Dockerfile -t "$IMAGE:$VER-op" -t "$IMAGE:latest" --push src
-          } 2>&1 | tee /tmp/sandcastle-input/failure.log
+          } 2>&1 | tee /tmp/port/failure.log
 
-      - name: Agent re-port
+      - name: Agent re-port (opencode via CPA)
         id: agent
         if: steps.attempt.outcome == 'failure'
         continue-on-error: true
@@ -104,29 +105,24 @@ jobs:
           DEPOT_TOKEN: ${{ secrets.DEPOT_API_KEY }}
           TAG: ${{ steps.rel.outputs.tag }}
         run: |
-          set -o pipefail
-          curl -fsS -o /dev/null -H "Authorization: Bearer $CPA_API_KEY" https://cpa.planasolutions.ai/v1/models
+          docker logout 4z8l73c27s.registry.depot.dev
           git -C src reset --quiet --hard && git -C src clean -qfdx
           base="$(git -C src rev-parse HEAD)"
-          git -C src config user.name "executor-selfhost-op[bot]"
-          git -C src config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          cp op/patches/onepassword.patch /tmp/sandcastle-input/
-          docker build -q --build-arg AGENT_UID="$(id -u)" --build-arg AGENT_GID="$(id -g)" \
-            --build-arg BUN_VERSION="$(jq -r '.packageManager | sub("^bun@"; "")' src/package.json)" \
-            -t sandcastle-executor:ci op/.sandcastle
-          (cd op && bun install --frozen-lockfile)
-          bun op/.sandcastle/fix.mts "$GITHUB_WORKSPACE/src" "$TAG" 2>&1 | tee /tmp/agent.log
+          DEPOT_TOKEN='' op/scripts/agent-port.sh src "$TAG" /tmp/port/failure.log
           op/scripts/verify.sh src
           depot build --project "$DEPOT_PROJECT" --platform linux/arm64 -f src/apps/host-selfhost/Dockerfile src
-          git -C src diff "$base" -- . ':!bun.lock' > op/patches/onepassword.patch
+          git -C src add -A
+          git -C src diff --cached "$base" -- . ':!bun.lock' > op/patches/onepassword.patch
 
       - name: Open PR with re-ported patch
         if: steps.agent.outcome == 'success'
         env:
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.rel.outputs.tag }}
           VER: ${{ steps.rel.outputs.ver }}
         run: |
           cd op
+          gh auth setup-git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "port/$VER"
@@ -134,20 +130,22 @@ jobs:
           git commit -m "fix: re-port 1Password patch to $TAG"
           git push origin "port/$VER"
           {
-            echo "The patch no longer applied cleanly to \`$TAG\`. A Sandcastle Codex agent re-ported it; verify and image build passed in CI."
+            echo "The patch no longer applied cleanly to \`$TAG\`. An opencode agent (gpt-6-sol via CLIProxyAPI) re-ported it; verify and image build passed in CI."
             echo; echo "Merging this PR publishes \`$IMAGE:$VER-op\`."
             echo; echo "<details><summary>Original failure</summary>"; echo; echo '```'
-            tail -c 6000 /tmp/sandcastle-input/failure.log; echo '```'; echo "</details>"
+            tail -c 6000 /tmp/port/failure.log; echo '```'; echo "</details>"
           } > /tmp/body.md
           gh pr create --title "Re-port 1Password patch to $TAG" --body-file /tmp/body.md --head "port/$VER"
 
       - name: Mark port failed
         if: steps.attempt.outcome == 'failure' && steps.agent.outcome != 'success'
         env:
+          GH_TOKEN: ${{ github.token }}
           VER: ${{ steps.rel.outputs.ver }}
         run: |
+          gh auth setup-git
           git -C op push origin "HEAD:refs/heads/port-failed/$VER"
           echo "::error::Patch failed on $VER and the agent could not fix it. Delete branch port-failed/$VER to retry."
-          tail -c 4000 /tmp/sandcastle-input/failure.log
+          tail -c 4000 /tmp/port/failure.log
           if [ -f /tmp/agent.log ]; then tail -c 4000 /tmp/agent.log; fi
           exit 1

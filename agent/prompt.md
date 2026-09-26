@@ -1,23 +1,7 @@
-# Context
-
 You are in a checkout of UsefulSoftwareCo/executor at upstream release `{{TAG}}`.
 We carry a small patch that enables the 1Password secret provider in the
 self-hosted build (`apps/host-selfhost`). It no longer applies or no longer
 passes verification on this release.
-
-The patch as it applied to the previous release:
-
-```diff
-!`cat /tmp/sandcastle-input/onepassword.patch`
-```
-
-What failed:
-
-```
-!`tail -c 12000 /tmp/sandcastle-input/failure.log`
-```
-
-# Task
 
 Re-implement the patch's intent on this release, adapting to upstream changes:
 
@@ -33,16 +17,24 @@ If upstream renamed or moved things, follow upstream's new structure. If
 upstream now ships 1Password in self-host on its own, make no changes.
 Keep the diff minimal; don't touch unrelated code or upgrade dependencies.
 
-Verify with the same checks CI runs, all of which must pass:
+Before finishing, run these checks and make them pass:
 
 ```
 bun install
 cd apps/host-selfhost && bun run typecheck && bunx vitest run src/executor-config.test.ts
 ```
 
-Commit your changes (include `bun.lock` if `bun install` changed it).
+Leave your changes uncommitted in the working tree. Finish with one line:
+`RESULT: ported` if the checks pass, or `RESULT: impossible — <reason>`.
 
-# Done
+The patch as it applied to the previous release:
 
-When the checks pass and your work is committed, output <promise>COMPLETE</promise>.
-If the task is impossible, explain why and output <promise>ABORT</promise>.
+```diff
+{{PATCH}}
+```
+
+What failed:
+
+```
+{{FAILURE}}
+```

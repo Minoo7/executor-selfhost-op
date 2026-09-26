@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "cpa": {
+      "npm": "@ai-sdk/openai",
+      "name": "CLIProxyAPI",
+      "options": {
+        "baseURL": "https://cpa.planasolutions.ai/v1",
+        "apiKey": "{env:CPA_API_KEY}"
+      },
+      "models": {
+        "gpt-6-sol": {
+          "options": { "reasoningEffort": "high" }
+        }
+      }
+    }
+  },
+  "model": "cpa/gpt-6-sol",
+  "autoupdate": false,
+  "share": "disabled"
+}
