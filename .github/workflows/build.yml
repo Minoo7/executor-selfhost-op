@@ -1,0 +1,162 @@
+name: build
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Upstream tag (default = latest stable release)
+        required: false
+      force:
+        description: Rebuild even if the image exists
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: [patches/**, scripts/**, .github/workflows/build.yml]
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: UsefulSoftwareCo/executor
+  IMAGE: ghcr.io/${{ github.repository_owner }}/executor-selfhost
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: op
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Resolve upstream release
+        id: rel
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          FORCE: ${{ github.event_name == 'push' || inputs.force }}
+        run: |
+          tag="${INPUT_TAG:-$(gh api "repos/$UPSTREAM/releases/latest" --jq .tag_name)}"
+          ver="${tag##*@}"; ver="${ver#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "ver=$ver" >> "$GITHUB_OUTPUT"
+          skip=false
+          if [ "$FORCE" != true ]; then
+            if docker manifest inspect "$IMAGE:$ver-op" >/dev/null 2>&1; then
+              echo "::notice::$IMAGE:$ver-op already exists"; skip=true
+            elif git -C op ls-remote --exit-code origin "refs/heads/port/$ver" >/dev/null \
+              || [ -n "$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "in:title \"Port failed: $tag\"" --json number --jq '.[].number')" ]; then
+              echo "::notice::Port for $tag is already waiting on review"; skip=true
+            fi
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
+      - name: Check out upstream
+        if: steps.rel.outputs.skip != 'true'
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: git clone --quiet --depth 1 --branch "$TAG" "https://github.com/$UPSTREAM" src
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.rel.outputs.skip != 'true'
+        with:
+          bun-version-file: src/package.json
+
+      - name: Apply patch and verify
+        id: attempt
+        if: steps.rel.outputs.skip != 'true'
+        continue-on-error: true
+        env:
+          VER: ${{ steps.rel.outputs.ver }}
+        run: |
+          mkdir -p /tmp/sandcastle-input
+          set -o pipefail
+          {
+            git -C src apply --3way "$GITHUB_WORKSPACE/op/patches/onepassword.patch" &&
+            op/scripts/verify.sh src &&
+            docker build -f src/apps/host-selfhost/Dockerfile -t "$IMAGE:$VER-op" src
+          } 2>&1 | tee /tmp/sandcastle-input/failure.log
+
+      - name: Push image
+        if: steps.attempt.outcome == 'success'
+        env:
+          VER: ${{ steps.rel.outputs.ver }}
+        run: |
+          docker tag "$IMAGE:$VER-op" "$IMAGE:latest"
+          docker push "$IMAGE:$VER-op"
+          docker push "$IMAGE:latest"
+
+      - name: Agent re-port
+        id: agent
+        if: steps.attempt.outcome == 'failure'
+        continue-on-error: true
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          TAG: ${{ steps.rel.outputs.tag }}
+          VER: ${{ steps.rel.outputs.ver }}
+        run: |
+          set -o pipefail
+          test -n "$CLAUDE_CODE_OAUTH_TOKEN" || { echo "CLAUDE_CODE_OAUTH_TOKEN secret missing"; exit 1; }
+          git -C src reset --quiet --hard && git -C src clean -qfdx
+          base="$(git -C src rev-parse HEAD)"
+          git -C src config user.name "executor-selfhost-op[bot]"
+          git -C src config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp op/patches/onepassword.patch /tmp/sandcastle-input/
+          docker build -q --build-arg AGENT_UID="$(id -u)" --build-arg AGENT_GID="$(id -g)" \
+            --build-arg BUN_VERSION="$(jq -r '.packageManager | sub("^bun@"; "")' src/package.json)" \
+            -t sandcastle-executor:ci op/.sandcastle
+          (cd op && bun install --frozen-lockfile)
+          bun op/.sandcastle/fix.mts "$GITHUB_WORKSPACE/src" "$TAG" 2>&1 | tee /tmp/agent.log
+          op/scripts/verify.sh src
+          docker build -f src/apps/host-selfhost/Dockerfile -t "$IMAGE:$VER-op" src
+          git -C src diff "$base" -- . ':!bun.lock' > op/patches/onepassword.patch
+
+      - name: Open PR with re-ported patch
+        if: steps.agent.outcome == 'success'
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+          VER: ${{ steps.rel.outputs.ver }}
+        run: |
+          cd op
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "port/$VER"
+          git add patches/onepassword.patch
+          git commit -m "fix: re-port 1Password patch to $TAG"
+          git push origin "port/$VER"
+          {
+            echo "The patch no longer applied cleanly to \`$TAG\`. A Sandcastle agent re-ported it; verify and image build passed in CI."
+            echo; echo "Merging this PR builds and publishes \`$IMAGE:$VER-op\`."
+            echo; echo "<details><summary>Original failure</summary>"; echo; echo '```'
+            tail -c 6000 /tmp/sandcastle-input/failure.log; echo '```'; echo "</details>"
+          } > /tmp/body.md
+          gh pr create --title "Re-port 1Password patch to $TAG" --body-file /tmp/body.md --head "port/$VER"
+
+      - name: Open issue
+        if: steps.attempt.outcome == 'failure' && steps.agent.outcome != 'success'
+        env:
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          {
+            echo "Patch failed on \`$TAG\` and the agent could not fix it. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo; echo '```'; tail -c 6000 /tmp/sandcastle-input/failure.log; echo '```'
+            if [ -f /tmp/agent.log ]; then echo; echo "Agent tail:"; echo '```'; tail -c 4000 /tmp/agent.log; echo '```'; fi
+          } > /tmp/body.md
+          gh issue create -R "$GITHUB_REPOSITORY" --title "Port failed: $TAG" --body-file /tmp/body.md
+          exit 1
