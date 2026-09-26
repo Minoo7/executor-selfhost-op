@@ -1,0 +1,7 @@
+model_provider = "cpa"
+
+[model_providers.cpa]
+name = "CLIProxyAPI"
+base_url = "https://cpa.planasolutions.ai/v1"
+wire_api = "responses"
+env_key = "CPA_API_KEY"

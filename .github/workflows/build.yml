@@ -21,6 +21,7 @@ permissions:
   packages: write
   pull-requests: write
   issues: write
+  id-token: write
 
 concurrency:
   group: build
@@ -102,17 +103,28 @@ jobs:
           docker push "$IMAGE:$VER-op"
           docker push "$IMAGE:latest"
 
-      - name: Agent re-port
-        id: agent
+      - name: Join tailnet for CLIProxyAPI
+        id: tailnet
         if: steps.attempt.outcome == 'failure'
         continue-on-error: true
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: T6BmGK8G1m11CNTRL-kthupAeTSJ11CNTRL
+          audience: api.tailscale.com/T6BmGK8G1m11CNTRL-kthupAeTSJ11CNTRL
+          tags: tag:executor-ci
+
+      - name: Agent re-port
+        id: agent
+        if: steps.attempt.outcome == 'failure' && steps.tailnet.outcome == 'success'
+        continue-on-error: true
         env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CPA_API_KEY: ${{ secrets.CPA_API_KEY }}
           TAG: ${{ steps.rel.outputs.tag }}
           VER: ${{ steps.rel.outputs.ver }}
         run: |
           set -o pipefail
-          test -n "$CLAUDE_CODE_OAUTH_TOKEN" || { echo "CLAUDE_CODE_OAUTH_TOKEN secret missing"; exit 1; }
+          test -n "$CPA_API_KEY" || { echo "CPA_API_KEY secret missing"; exit 1; }
+          curl -fsS -o /dev/null -H "Authorization: Bearer $CPA_API_KEY" https://cpa.planasolutions.ai/v1/models
           git -C src reset --quiet --hard && git -C src clean -qfdx
           base="$(git -C src rev-parse HEAD)"
           git -C src config user.name "executor-selfhost-op[bot]"
