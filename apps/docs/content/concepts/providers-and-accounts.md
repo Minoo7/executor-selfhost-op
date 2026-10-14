@@ -50,6 +50,19 @@ it later; neither changes the credential.
 Fields are an object that matches the method's schema — `{ token }`, or
 `{ email, key }` — not one normalized secret string.
 
+### Personal and Shared ownership
+
+In a hosted organization, a Personal account is private to its owner. From the
+account's actions, its owner can choose **Share account** and grant access to
+selected groups or everyone. The creator and organization admins can manage a
+Shared account; management alone does not grant use of its credentials.
+
+Only the original creator can choose **Make personal**. This revokes other
+members' direct account access while preserving the account, credentials, and
+saved links. Calls already running may finish. Sharing the account again restores
+eligible saved personal links. App-wide links continue to authorize use through
+those apps; unlink the account from each app to stop that delegated use.
+
 ## Requirements
 
 An app declares a **requirement** for each provider it needs. The requirement is

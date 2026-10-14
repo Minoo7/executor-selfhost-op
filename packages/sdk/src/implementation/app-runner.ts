@@ -602,7 +602,7 @@ export const makeAppRunner = (host: AppRunnerHost) => {
           Effect.tryPromise({
             try: () =>
               entry.start(
-                options.body,
+                new Response(options.body).body,
                 options.headers,
                 delivery,
                 workflow,

@@ -58,8 +58,13 @@ export function AppAccessSettings({ app }: { readonly app: AppId }) {
     </section>
   );
 }
-/** Personal accounts remain private; shared account grants are independent of app sharing. */
-export function AccountAccessSettings({ account }: { readonly account: AccountId }) {
+export function AccountAccessSettings({
+  account,
+  onPendingChange,
+}: {
+  readonly account: AccountId;
+  readonly onPendingChange?: ((pending: boolean) => void) | undefined;
+}) {
   const { organization } = useOrganizationRoute();
   const save = useAtomSet(shareAccountAtom({ organization, account }), { mode: "promiseExit" });
   return (
@@ -69,34 +74,44 @@ export function AccountAccessSettings({ account }: { readonly account: AccountId
         Failure={HostedFailure}
         pending={<DetailSkeleton label="Loading account access" />}
       >
-        {(access) =>
-          access.ownership.kind === "personal" ? (
-            <p className="text-sm text-muted-foreground">Personal account · Only you can use it.</p>
-          ) : (
+        {(access) => (
+          <>
+            {access.ownership.kind === "personal" && (
+              <p className="text-sm text-muted-foreground">
+                Share this account with selected organization members. Its creator and organization
+                admins can manage it. Only its original creator can make it personal again.
+              </p>
+            )}
             <QueryView
               query={groupsAtom(organization)}
               Failure={HostedFailure}
               pending={<DetailSkeleton label="Loading groups" />}
             >
-              {(data) =>
-                access.ownership.kind === "shared" && (
-                  <SharingEditor
-                    disabledReason={
-                      access.canManage
-                        ? undefined
-                        : "Only the account creator and organization admins can change account access."
-                    }
-                    mode="account"
-                    value={access.ownership.audience}
-                    revision={access.revision}
-                    groups={data.groups}
-                    save={(audience, revision) => save({ audience, revision })}
-                  />
-                )
-              }
+              {(data) => (
+                <SharingEditor
+                  disabledReason={
+                    access.canManage
+                      ? undefined
+                      : "Only the account creator and organization admins can change account access."
+                  }
+                  mode="account"
+                  onPendingChange={onPendingChange}
+                  value={
+                    access.ownership.kind === "shared"
+                      ? access.ownership.audience
+                      : { kind: "everyone" }
+                  }
+                  submitLabel={
+                    access.ownership.kind === "personal" ? "Share account" : "Save access"
+                  }
+                  revision={access.revision}
+                  groups={data.groups}
+                  save={(audience, revision) => save({ audience, revision })}
+                />
+              )}
             </QueryView>
-          )
-        }
+          </>
+        )}
       </QueryView>
     </section>
   );

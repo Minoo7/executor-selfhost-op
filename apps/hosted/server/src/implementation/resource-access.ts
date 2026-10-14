@@ -9,7 +9,7 @@ import { HttpApiBuilder } from "effect/http-api";
 import { StorageError, type AppId, type Provider, type ProviderId } from "@executor-js/sdk/core";
 import { HostedApi } from "../contracts/api.ts";
 import { HostedExecutor } from "../contracts/executor.ts";
-import { CurrentOrganization } from "../contracts/organization.ts";
+import { CurrentOrganization, OrganizationForbidden } from "../contracts/organization.ts";
 import {
   AccessConflict,
   type AppAudience,
@@ -135,10 +135,6 @@ export const shareApp = (
   }).pipe(
     Effect.catchTags({ SqlError: () => new StorageError(), SchemaError: () => new StorageError() }),
   );
-/**
- * Personal account ownership cannot be changed by editing shared-account grants. The share grant
- * checks management up front; it is checked again under the transaction's lock.
- */
 export const shareAccount = (
   audience: typeof SharedAudience.Type,
   revision: typeof AccessRevision.Type,
@@ -149,13 +145,11 @@ export const shareAccount = (
     yield* sql.withTransaction(
       Effect.gen(function* () {
         const actor = yield* lockActor;
-        const access = yield* requireAccountAccess(account, "manage");
-        if (access.ownership.kind === "personal")
-          return yield* new AccessConflict({ reason: "personal_account" });
+        yield* requireAccountAccess(account, "manage");
         if (audience.kind === "groups")
           yield* requireGroupSharing(sql, actor.organization, actor.user, audience.groups);
         const changed =
-          yield* sql`update hosted_account_access set audience = ${audience.kind}, revision = gen_random_uuid()::text
+          yield* sql`update hosted_account_access set kind = 'shared', personal_user_id = null, audience = ${audience.kind}, revision = gen_random_uuid()::text
       where account_id = ${account} and organization_id = ${actor.organization} and revision = ${revision} returning account_id`;
         if (changed.length !== 1) return yield* new AccessConflict({ reason: "changed" });
         yield* sql`delete from hosted_account_groups where account_id = ${account}`;
@@ -168,6 +162,29 @@ export const shareAccount = (
   }).pipe(
     Effect.catchTags({ SqlError: () => new StorageError(), SchemaError: () => new StorageError() }),
   );
+export const makeAccountPersonal = (revision: typeof AccessRevision.Type) =>
+  Effect.gen(function* () {
+    const { account } = yield* AccountGrants.share;
+    const sql = yield* policyDatabase;
+    return yield* sql.withTransaction(
+      Effect.gen(function* () {
+        const actor = yield* lockActor;
+        const access = yield* requireAccountAccess(account, "manage");
+        if (access.creator !== actor.user) return yield* new OrganizationForbidden();
+        if (access.revision !== revision) return yield* new AccessConflict({ reason: "changed" });
+        if (access.ownership.kind === "personal") return access;
+        const changed = yield* sql`update hosted_account_access
+          set kind = 'personal', personal_user_id = creator_id, audience = null,
+              revision = gen_random_uuid()::text
+          where account_id = ${account} and organization_id = ${actor.organization}
+            and revision = ${revision} and kind = 'shared' and creator_id = ${actor.user}
+          returning account_id`;
+        if (changed.length !== 1) return yield* new AccessConflict({ reason: "changed" });
+        yield* sql`delete from hosted_account_groups where account_id = ${account}`;
+        return yield* requireAccountAccess(account, "read");
+      }),
+    );
+  }).pipe(Effect.catchTag("SqlError", () => new StorageError()));
 /** Both hosted products register the same authenticated policy handlers. */
 export const hostedResourceAccessHandlers = HttpApiBuilder.group(
   HostedApi,
@@ -181,6 +198,7 @@ export const hostedResourceAccessHandlers = HttpApiBuilder.group(
           shareApp(params.app, payload.audience, payload.revision),
         )
         .handle("account", () => Effect.map(AccountGrants.inspect, (grant) => grant.access))
-        .handle("shareAccount", ({ payload }) => shareAccount(payload.audience, payload.revision));
+        .handle("shareAccount", ({ payload }) => shareAccount(payload.audience, payload.revision))
+        .handle("makeAccountPersonal", ({ payload }) => makeAccountPersonal(payload.revision));
     }),
 );

@@ -41,8 +41,11 @@ export const WorkerInvocation = Schema.Struct({
   workflowControls: Schema.Boolean,
 });
 export type WorkerInvocation = typeof WorkerInvocation.Type;
+/** Size of each `AppHostCallbacks.input` slice; an empty slice ends the input. */
+export const appInputChunkLength = 1048576;
 /** Only these capabilities cross from a live app invocation back to the product. */
 export interface AppHostCallbacks extends RpcTarget {
+  input(offset: number): Promise<string>;
   elicit(input: string): Promise<string>;
   control(input: string): Promise<string>;
   /** The invocation's encoded build, read only when the runner cold-starts its Worker. */

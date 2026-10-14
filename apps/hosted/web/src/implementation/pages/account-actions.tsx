@@ -1,7 +1,11 @@
 import { AccountAccessSettings } from "./resource-settings.tsx";
 import { DetailSkeleton } from "@executor-js/ui/dashboard/loading";
 import type { AccountDetail, AccountSummary } from "@executor-js/ui/contracts/dashboard";
-import { useAtomSet } from "@effect/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { Option } from "effect";
+import { AsyncResult } from "effect/reactivity";
+import { sessionAtom } from "../../contracts/auth.ts";
+import { MakeAccountPersonal } from "./make-account-personal.tsx";
 import type { AccountId } from "@executor-js/sdk";
 import { useState, type ReactNode } from "react";
 import {
@@ -27,7 +31,7 @@ import { HostedFailure } from "../components/dashboard-bindings.tsx";
 import { useOrganizationRoute } from "../components/organization.tsx";
 
 /** The list page owns an open dialog, so it outlives the row if the account changes underneath it. */
-export type AccountDialogKind = "edit" | "health" | "access" | "delete";
+export type AccountDialogKind = "edit" | "health" | "access" | "personal" | "delete";
 
 /**
  * Row actions replace the account page: name, health, access and deletion, in place. Credentials
@@ -42,12 +46,19 @@ export function HostedAccountActions({
   readonly access: typeof AccountAccess.Type | undefined;
   readonly open: (dialog: AccountDialogKind) => void;
 }) {
+  const session = AsyncResult.value(useAtomValue(sessionAtom));
+  const user = Option.isSome(session) ? session.value?.user.id : undefined;
   return (
     <AccountActionsMenu account={account}>
       <DropdownMenuItem onSelect={() => open("edit")}>Edit details</DropdownMenuItem>
       <DropdownMenuItem onSelect={() => open("health")}>Check health</DropdownMenuItem>
-      {access?.ownership.kind === "shared" && (
-        <DropdownMenuItem onSelect={() => open("access")}>Manage access</DropdownMenuItem>
+      {access?.canManage && (
+        <DropdownMenuItem onSelect={() => open("access")}>
+          {access.ownership.kind === "personal" ? "Share account" : "Manage access"}
+        </DropdownMenuItem>
+      )}
+      {access?.ownership.kind === "shared" && access.canManage && access.creator === user && (
+        <DropdownMenuItem onSelect={() => open("personal")}>Make personal</DropdownMenuItem>
       )}
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onSelect={() => open("delete")}>
@@ -61,6 +72,7 @@ const titles = {
   edit: "Edit account",
   health: "Account health",
   access: "Manage access",
+  personal: "Make account personal?",
   delete: "Delete account?",
 } satisfies Record<AccountDialogKind, string>;
 
@@ -96,7 +108,12 @@ export function HostedAccountDialog({
           ) : dialog === "access" ? (
             <>
               <AccountDialogIdentity data={data} />
-              <AccountAccessSettings account={id} />
+              <AccountAccessSettings account={id} onPendingChange={setBusy} />
+            </>
+          ) : dialog === "personal" ? (
+            <>
+              <AccountDialogIdentity data={data} />
+              <MakeAccountPersonal account={id} onPendingChange={setBusy} onClose={onClose} />
             </>
           ) : (
             <DeleteDialogBody data={data} onPendingChange={setBusy} onClose={onClose} />

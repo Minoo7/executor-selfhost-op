@@ -45,6 +45,7 @@ import { compileWorkerApp } from "../workerd-build.ts";
 import { assembleWorkerBundle } from "./worker-build-storage.ts";
 import { declarationFailed } from "./worker-source-map.ts";
 import {
+  appInputChunkLength,
   CompileWorkerApp,
   CompileWorkerResult,
   PreparedWorkflow,
@@ -335,6 +336,13 @@ class AppApi extends RpcTarget {
     );
   }
   async invoke(value: string, callbacks: RpcStub<AppHostCallbacks>): Promise<string> {
+    const parts: string[] = [];
+    for (let offset = 0; ; offset += appInputChunkLength) {
+      const part = await callbacks.input(offset);
+      if (part.length === 0) break;
+      parts.push(part);
+    }
+    value = parts.join("");
     return this.#run(
       Schema.decodeUnknownEffect(Schema.fromJsonString(WorkerInvocation))(value).pipe(
         Effect.flatMap(({ elicitation, workflowControls, ...invocation }) =>

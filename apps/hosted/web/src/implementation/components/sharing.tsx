@@ -208,6 +208,8 @@ export function SharingFailure({
   );
 }
 type SharingProps = {
+  readonly submitLabel?: string | undefined;
+  readonly onPendingChange?: ((pending: boolean) => void) | undefined;
   readonly disabledReason?: string | undefined;
   readonly subject?: string | undefined;
   readonly groups: readonly Group[];
@@ -264,6 +266,10 @@ export function SharingEditor(props: SharingProps) {
   });
   const pending = useStore(form.store, (state) => state.isSubmitting);
   const attempts = useStore(form.store, (state) => state.submissionAttempts);
+  const onPendingChange = props.onPendingChange;
+  useEffect(() => {
+    onPendingChange?.(pending);
+  }, [pending, onPendingChange]);
   useEffect(() => {
     if (!pending && focusInvalid.current) {
       focusInvalid.current = false;
@@ -320,7 +326,7 @@ export function SharingEditor(props: SharingProps) {
       {error && <SharingFailure message={error} />}
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" loading={pending} disabledReason={props.disabledReason}>
-          Save access
+          {props.submitLabel ?? "Save access"}
         </Button>
         <Button
           type="button"

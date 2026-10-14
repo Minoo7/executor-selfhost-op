@@ -14,6 +14,7 @@ import {
   type WorkflowRuntime,
 } from "../contracts/workflow-runtime.ts";
 import {
+  appInputChunkLength,
   CompileWorkerApp,
   CompileWorkerResult,
   WorkflowHostCommand,
@@ -52,11 +53,22 @@ class HostCallbacks extends RpcTarget implements AppHostCallbacks {
   readonly #elicit: Callback | null;
   readonly #control: Callback | null;
   readonly #load: () => Promise<string>;
-  constructor(elicit: Callback | null, control: Callback | null, load: () => Promise<string>) {
+  readonly #input: string;
+  constructor(
+    elicit: Callback | null,
+    control: Callback | null,
+    input: string,
+    load: () => Promise<string>,
+  ) {
     super();
     this.#elicit = elicit;
     this.#control = control;
     this.#load = load;
+    this.#input = input;
+  }
+  async input(offset: number): Promise<string> {
+    if (!Number.isSafeInteger(offset) || offset < 0) throw new RangeError("Invalid input offset");
+    return this.#input.slice(offset, offset + appInputChunkLength);
   }
   async elicit(input: string) {
     if (this.#elicit === null) throw new Error("This invocation cannot ask for input");
@@ -221,13 +233,14 @@ export const connectedWorkerdApps = (blobs: BlobStorage, transport: WorkerdTrans
           const callbacks = new HostCallbacks(
             capabilities.elicit,
             capabilities.controls,
+            encoded,
             async () => encodeLoadedBuild(await capabilities.load()),
           );
           return yield* rpc((api) =>
             Effect.tryPromise({
               try: async () =>
                 Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(
-                  await api.invoke(encoded, callbacks),
+                  await api.invoke("", callbacks),
                 ),
               catch: protocolFailure,
             }),

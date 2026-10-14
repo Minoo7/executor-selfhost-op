@@ -56,7 +56,6 @@ export const AppAccess = Schema.Struct({
   canManage: Schema.Boolean,
   canUse: Schema.Boolean,
 });
-/** Personal ownership is immutable; shared credentials have independently editable grants. */
 export const AccountOwnership = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("personal"), user: Principal.fields.userId }),
   Schema.Struct({ kind: Schema.Literal("shared"), audience: SharedAudience }),
@@ -96,19 +95,13 @@ const accessConflicts = {
   groups_changed:
     "A selected group was removed or you left it. Choose current groups and try again.",
   creator_unavailable: "Only me needs the app's creator, who is no longer in this organization.",
-  personal_account: "A personal account cannot be shared. Share a shared account instead.",
 } as const;
 /** A stale revision or removed group must preserve the editor's draft. */
 export const AccessConflict = ApiError.define({
   tag: "AccessConflict",
   status: 409,
   fields: {
-    reason: Schema.Literals([
-      "changed",
-      "groups_changed",
-      "creator_unavailable",
-      "personal_account",
-    ]),
+    reason: Schema.Literals(["changed", "groups_changed", "creator_unavailable"]),
   },
   message: ({ reason }) => accessConflicts[reason],
   recorded: ({ reason }) => accessConflicts[reason],
@@ -186,6 +179,18 @@ export const HostedResourceAccess = HttpApiGroup.make("resourceAccess")
       {
         params: account,
         payload: Schema.Struct({ audience: SharedAudience, revision: AccessRevision }),
+        success: AccountAccess,
+        error: errors,
+      },
+    ).pipe(requireAccount.share),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "makeAccountPersonal",
+      "/api/organizations/:organization/accounts/:account/access/personal",
+      {
+        params: account,
+        payload: Schema.Struct({ revision: AccessRevision }),
         success: AccountAccess,
         error: errors,
       },

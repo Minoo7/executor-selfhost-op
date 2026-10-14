@@ -1760,6 +1760,27 @@ export const scenarios = plan({
       local: na("Local has no organization sharing policy."),
     },
   },
+  accountConversion: {
+    fixtures: "actors",
+    file: "account-conversion.spec.ts",
+    title:
+      "Account creators convert Personal and Shared ownership without losing credentials or links",
+    targets: {
+      "self-host": scheduled,
+      cloud: scheduled,
+      local: na("Local has no organization sharing policy."),
+    },
+  },
+  appLargeInput: {
+    fixtures: "actors",
+    file: "app-large-input.spec.ts",
+    title: "App RPC delivers the complete 35 MB tool input",
+    targets: {
+      "self-host": scheduled,
+      cloud: scheduled,
+      local: na("Hosted transport regression."),
+    },
+  },
   arrayResourceAccess: {
     fixtures: "actors",
     file: "resource-access.spec.ts",

@@ -148,6 +148,25 @@ const shareAccount = Atom.family((key: AccountKey) =>
       ),
   ),
 );
+const makeAccountPersonal = Atom.family((key: AccountKey) =>
+  HostedClient.runtime.fn((payload: { revision: typeof AccessRevision.Type }, get) =>
+    Effect.flatMap(HostedClient, (client) =>
+      client.resourceAccess.makeAccountPersonal({ params: key, payload }),
+    ).pipe(
+      Effect.tap((saved) =>
+        Effect.sync(() => {
+          acknowledge(get, accountAccess(key), () => saved);
+          refreshResourceDirectory(get, key.organization);
+        }),
+      ),
+      Effect.tapError(() => Effect.sync(() => get.refresh(accountAccess(key)))),
+    ),
+  ),
+);
+export const makeAccountPersonalAtom = (key: {
+  organization: OrganizationReference;
+  account: AccountId;
+}) => makeAccountPersonal(new AccountKey(key));
 /** App sharing is an independent mutation per app. */
 export const shareAppAtom = (key: { organization: OrganizationReference; app: AppId }) =>
   shareApp(new AppKey(key));

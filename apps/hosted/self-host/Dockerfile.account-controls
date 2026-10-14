@@ -1,0 +1,7 @@
+FROM ghcr.io/usefulsoftwareco/executor-selfhost@sha256:f50d8919a979fe02fd03e2fe822e33d851de739fbdacdff5e17c460352ee15f9
+COPY --chown=1000:1000 apps/hosted/self-host/dist/workerd/product.mjs /app/product.mjs
+COPY --chown=1000:1000 apps/hosted/self-host/dist/workerd/apps/ /app/apps/
+COPY --chown=1000:1000 apps/hosted/self-host/dist/workerd/web/ /app/web/
+ARG EXECUTOR_BUILD_REVISION
+LABEL org.opencontainers.image.revision=$EXECUTOR_BUILD_REVISION
+LABEL org.opencontainers.image.version="2.0.0-beta.19-account-controls"
