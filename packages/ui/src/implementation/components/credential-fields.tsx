@@ -1,4 +1,5 @@
 import type { AccountFormFields } from "../../contracts/credentials.ts";
+import { useId, useState } from "react";
 import { Input } from "@executor-js/ui/components/input";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { SquareLock02Icon, ViewIcon } from "@hugeicons/core-free-icons";
@@ -59,6 +60,7 @@ export function CredentialFields({
   fields,
   values,
   onChange,
+  onPendingChange,
   pending,
   hosts,
 }: {
@@ -67,16 +69,19 @@ export function CredentialFields({
   readonly hosts?: readonly string[] | undefined;
   readonly values: Readonly<Record<string, string>>;
   readonly onChange: (values: Readonly<Record<string, string>>) => void;
+  readonly onPendingChange: (pending: boolean) => void;
   readonly pending: boolean;
 }) {
+  const id = useId();
+  const [fileError, setFileError] = useState<{ name: string; message: string }>();
   return (
     <>
       {Object.entries(fields.properties).map(([name, field]) => (
-        <label
+        <div
           className="field-label flex flex-col gap-2.25 text-[13px] font-medium [&_[data-slot='select-trigger']]:w-full"
           key={name}
         >
-          <span className="flex w-full items-center gap-1.5">
+          <label htmlFor={`${id}-${name}`} className="flex w-full items-center gap-1.5">
             {fieldLabel(name, field)}
             {field.type === "string" && !fields.plain?.includes(name) && (
               <FieldAccess
@@ -84,7 +89,7 @@ export function CredentialFields({
                 hosts={hosts}
               />
             )}
-          </span>
+          </label>
           <div data-private>
             {field.type === "boolean" || field.enum ? (
               <Select
@@ -93,7 +98,7 @@ export function CredentialFields({
                 disabled={pending}
                 required={fields.required?.includes(name) === true}
               >
-                <SelectTrigger>
+                <SelectTrigger id={`${id}-${name}`}>
                   <SelectValue placeholder="Choose a value" />
                 </SelectTrigger>
                 <SelectContent data-private>
@@ -106,6 +111,7 @@ export function CredentialFields({
               </Select>
             ) : (
               <Input
+                id={`${id}-${name}`}
                 type={
                   field.type !== "string"
                     ? "number"
@@ -121,13 +127,43 @@ export function CredentialFields({
                 disabled={pending}
               />
             )}
+            {field.type === "string" && !field.enum && !fields.plain?.includes(name) && (
+              <>
+                <Input
+                  type="file"
+                  aria-label={`Upload ${fieldLabel(name, field)} file`}
+                  className="mt-2"
+                  disabled={pending}
+                  onChange={async (event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    if (!file) return;
+                    setFileError(undefined);
+                    if (file.size === 0 || file.size > 1024 * 1024) {
+                      setFileError({ name, message: "Choose a non-empty text file up to 1 MiB." });
+                      return;
+                    }
+                    onPendingChange(true);
+                    try {
+                      const text = await file.text();
+                      onChange({ ...values, [name]: text });
+                    } catch {
+                      setFileError({ name, message: "Couldn't read this file. Choose it again." });
+                    } finally {
+                      onPendingChange(false);
+                    }
+                  }}
+                />
+                {fileError?.name === name && <span role="alert">{fileError.message}</span>}
+              </>
+            )}
           </div>
           {field.description && (
             <span className="field-hint text-muted-foreground text-[12px] font-normal leading-[1.5] [.mcp-install-content_>_&]:mt-5">
               {field.description}
             </span>
           )}
-        </label>
+        </div>
       ))}
     </>
   );
