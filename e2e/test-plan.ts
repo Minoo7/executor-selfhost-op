@@ -3666,6 +3666,16 @@ export const scenarios = plan({
       local: na("The hosted and local dashboards share the credential form and check contract."),
     },
   },
+  credentialFileUpload: {
+    fixtures: "actors",
+    file: "credential-file-upload.spec.ts",
+    title: "Credential files preserve PEM newlines through validation and saving",
+    targets: {
+      "self-host": scheduled,
+      cloud: scheduled,
+      local: na("Local shares the same credential fields and account form."),
+    },
+  },
   accountDescriptions: {
     fixtures: "actors",
     file: "account-descriptions.spec.ts",

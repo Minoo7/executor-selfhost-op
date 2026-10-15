@@ -20,6 +20,10 @@ Every account is connected for an app. Choose **Connect new account** at the end
 needs credentials, enter them in the same dialog. The connection dialog contains the
 sign-in methods supported by the provider.
 
+Secret text fields also accept a file up to 1 MiB. Choose the file below the field
+to load its contents, including PEM line breaks, then validate and connect as usual.
+The filename is not saved. Selecting another file requires validation again.
+
 The dialog uses the provider fields already loaded with the app. Opening it does
 not create a connection or fetch the fields again. A connection is created when
 you submit; retries in that dialog reuse the same request.

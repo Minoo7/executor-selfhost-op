@@ -220,6 +220,7 @@ function SetupForm<E>({
               fields={fields}
               values={values}
               onChange={setValues}
+              onPendingChange={setPending}
               pending={pending}
             />
           ) : (

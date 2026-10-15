@@ -178,7 +178,8 @@ export function AccountForm<A, E>({
             hosts={provider.definition.hosts}
             values={values}
             onChange={changeValues}
-            pending={pending}
+            onPendingChange={updatePending}
+            pending={pending || verdict.state === "checking"}
           />
           {validates && auth?.type === "secrets" && (
             <CredentialVerdict
