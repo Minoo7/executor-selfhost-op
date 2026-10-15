@@ -492,7 +492,7 @@ layer(HostedLive, { excludeTestServices: true })("Credential hosts", (it) => {
               .evaluateAll((inputs) => inputs.map((input) => input.getAttribute("type"))),
           );
           // A plain field is not secret, so it is shown; secret fields stay masked.
-          expect(types).toEqual(["text", "password", "password"]);
+          expect(types).toEqual(["text", "password", "file", "password", "file"]);
           const { explained, destination, access } = yield* browser.use(
             "Read what the app gets",
             () =>
