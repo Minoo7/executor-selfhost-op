@@ -44,7 +44,7 @@ jobs:
           grep -F 'Product control start returned 500, expected 200' .local/private-https-negative-control.log
           cp "$backup" packages/utils/src/url-policy.ts
           bun run e2e:self-host --workers 1 --test-name 'Private HTTPS MCP import and OAuth'
-      - name: Package the private HTTPS product overlay
+      - name: Package the matched private HTTPS product and dashboard overlay
         if: github.ref_name == 'fix/beta19-private-https-origins'
         env:
           EXECUTOR_BUILD_VERSION: ${{ github.sha }}
@@ -54,21 +54,23 @@ jobs:
           bun run --cwd apps/hosted/self-host package:runtime
           mkdir -p .local/private-https-overlay
           cp apps/hosted/self-host/dist/workerd/product.mjs .local/private-https-overlay/product.mjs
+          cp -a apps/hosted/self-host/dist/workerd/web .local/private-https-overlay/web
           printf '%s\n' \
             'FROM executor-credential-upload@sha256:79bcdbc9370d0ee2594a6e013a0f9dce4dc76c2df56f33fa778ced20fac3d7e4' \
             'COPY --chown=1000:1000 product.mjs /app/product.mjs' \
+            'COPY --chown=1000:1000 web/ /app/web/' \
             "ENV EXECUTOR_BUILD_VERSION=$GITHUB_SHA" \
             "LABEL org.opencontainers.image.revision=$GITHUB_SHA" \
             'LABEL org.opencontainers.image.version="2.0.0-beta.19-credential-upload-private-https"' \
             > .local/private-https-overlay/Dockerfile
           printf '%s\n' "$GITHUB_SHA" > .local/private-https-overlay/REVISION
-          (cd apps/hosted/self-host/web/dist/client && find . -type f -print0 | sort -z | xargs -0 sha256sum) > .local/private-https-overlay/WEB_SHA256SUMS
+          (cd .local/private-https-overlay/web && find . -type f -print0 | sort -z | xargs -0 sha256sum) > .local/private-https-overlay/WEB_SHA256SUMS
           (cd .local/private-https-overlay && sha256sum product.mjs Dockerfile REVISION WEB_SHA256SUMS > SHA256SUMS)
           tar -czf .local/private-https-overlay.tar.gz -C .local/private-https-overlay .
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: github.ref_name == 'fix/beta19-private-https-origins'
         with:
-          name: private-https-product-${{ github.sha }}
+          name: private-https-product-web-${{ github.sha }}
           path: .local/private-https-overlay.tar.gz
           if-no-files-found: error
           retention-days: 7
