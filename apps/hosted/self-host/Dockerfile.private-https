@@ -1,0 +1,29 @@
+ARG EXECUTOR_BASE_IMAGE=executor-credential-upload@sha256:79bcdbc9370d0ee2594a6e013a0f9dce4dc76c2df56f33fa778ced20fac3d7e4
+FROM node:24.18.0-bookworm-slim AS build
+COPY --from=oven/bun:1.4.2 /usr/local/bin/bun /usr/local/bin/bun
+ARG EXECUTOR_BUILD_VERSION
+RUN test -n "$EXECUTOR_BUILD_VERSION" || { echo "EXECUTOR_BUILD_VERSION is required. Pass --build-arg EXECUTOR_BUILD_VERSION=<version>, or set it in the environment for docker compose build." >&2; exit 1; }
+ENV EXECUTOR_BUILD_VERSION=$EXECUTOR_BUILD_VERSION EXECUTOR_ENVIRONMENT=self-host
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 make g++ && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+COPY package.json bun.lock ./
+COPY .gitignore ./
+COPY patches ./patches
+COPY tsconfig.json ./
+COPY packages ./packages
+COPY apps ./apps
+COPY playground ./playground
+COPY e2e/viewer/package.json ./e2e/viewer/package.json
+RUN bun install --frozen-lockfile --filter @executor-js/hosted-self-host --filter @executor-js/hosted-self-host-web --filter @executor-js/telemetry --filter apps --filter @executor-js/app-live-inbox
+RUN bun run --cwd packages/telemetry build:motel
+RUN bun run --cwd apps/hosted/self-host/web build
+RUN bun run --cwd packages/apps build
+RUN bun run --cwd apps/hosted/self-host package:runtime
+
+FROM ${EXECUTOR_BASE_IMAGE}
+COPY --from=build --chown=1000:1000 /build/apps/hosted/self-host/dist/workerd/product.mjs /app/product.mjs
+COPY --from=build --chown=1000:1000 /build/apps/hosted/self-host/dist/workerd/web/ /app/web/
+ARG EXECUTOR_BUILD_VERSION
+ENV EXECUTOR_BUILD_VERSION=$EXECUTOR_BUILD_VERSION
+LABEL org.opencontainers.image.revision=$EXECUTOR_BUILD_VERSION
+LABEL org.opencontainers.image.version="2.0.0-beta.19-credential-upload-private-https"
