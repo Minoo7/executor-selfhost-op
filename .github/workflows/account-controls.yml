@@ -3,7 +3,10 @@ name: Beta.19 account controls
 on:
   push:
     branches:
-      [fix/beta19-preserve-account-controls, feat/credential-file-upload, fix/app-account-sharing]
+      - fix/beta19-preserve-account-controls
+      - feat/credential-file-upload
+      - fix/beta19-private-https-origins
+      - fix/app-account-sharing
   workflow_dispatch:
 
 permissions:
@@ -26,4 +29,49 @@ jobs:
       - run: bun run check
       - run: bun run docs:validate
       - run: bun run e2e:prepare
-      - run: bun run e2e:self-host --workers 2 --test-name 'App accounts show sharing|Account creators convert|App RPC delivers|React app deployments compile Tailwind|Hosted dashboard runs of approval-gated|Group sharing forms retain|Groups enforce private|Credential files preserve PEM|Pasted credentials are named|The credential form shows|the connect form says|an app manager without use of an app-account webhook'
+      - run: bun run e2e:self-host --workers 2 --test-name 'App accounts show sharing|Account creators convert|App RPC delivers|React app deployments compile Tailwind|Hosted dashboard runs of approval-gated|Group sharing forms retain|Groups enforce private|Credential files preserve PEM|Pasted credentials are named|The credential form shows|the connect form says|an app manager without use of an app-account webhook|Private HTTPS MCP import and OAuth|MCP quick add imports public servers|MCP quick add imports OAuth servers|MCP quick add explains servers|OAuth setup honors host URL policy'
+      - name: Verify the HTTPS regression rejects the old validator
+        if: github.ref_name == 'fix/beta19-private-https-origins'
+        run: |
+          backup="$(mktemp)"
+          cp packages/utils/src/url-policy.ts "$backup"
+          trap 'cp "$backup" packages/utils/src/url-policy.ts; rm -f "$backup"' EXIT
+          node --input-type=module -e 'import { readFileSync, writeFileSync } from "node:fs"; const path = "packages/utils/src/url-policy.ts"; const text = readFileSync(path, "utf8"); const fixed = "(url.protocol === \"http:\" || url.protocol === \"https:\")"; if (text.split(fixed).length !== 2) throw new Error("Expected exactly one HTTPS validator"); writeFileSync(path, text.replace(fixed, "url.protocol === \"http:\""));'
+          set +e
+          bun run e2e:self-host --workers 1 --test-name 'Private HTTPS MCP import and OAuth' 2>&1 | tee .local/private-https-negative-control.log
+          status=${PIPESTATUS[0]}
+          set -e
+          test "$status" -ne 0
+          grep -F 'Product control start returned 500, expected 200' .local/private-https-negative-control.log
+          cp "$backup" packages/utils/src/url-policy.ts
+          bun run e2e:self-host --workers 1 --test-name 'Private HTTPS MCP import and OAuth'
+      - name: Package the matched private HTTPS product and dashboard overlay
+        if: github.ref_name == 'fix/beta19-private-https-origins' || github.ref_name == 'fix/app-account-sharing'
+        env:
+          EXECUTOR_BUILD_VERSION: ${{ github.sha }}
+          EXECUTOR_ENVIRONMENT: self-host
+        run: |
+          bun run --cwd apps/hosted/self-host/web build
+          bun run --cwd apps/hosted/self-host package:runtime
+          mkdir -p .local/private-https-overlay
+          cp apps/hosted/self-host/dist/workerd/product.mjs .local/private-https-overlay/product.mjs
+          cp -a apps/hosted/self-host/dist/workerd/web .local/private-https-overlay/web
+          printf '%s\n' \
+            'FROM executor-private-https@sha256:01b5d0a9a6ff1cc48601902478cc36c7117d79bceb23d72d105992f89b7f25f6' \
+            'COPY --chown=1000:1000 product.mjs /app/product.mjs' \
+            'COPY --chown=1000:1000 web/ /app/web/' \
+            "ENV EXECUTOR_BUILD_VERSION=$GITHUB_SHA" \
+            "LABEL org.opencontainers.image.revision=$GITHUB_SHA" \
+            'LABEL org.opencontainers.image.version="2.0.0-beta.19-credential-upload-private-https"' \
+            > .local/private-https-overlay/Dockerfile
+          printf '%s\n' "$GITHUB_SHA" > .local/private-https-overlay/REVISION
+          (cd .local/private-https-overlay/web && find . -type f -print0 | sort -z | xargs -0 sha256sum) > .local/private-https-overlay/WEB_SHA256SUMS
+          (cd .local/private-https-overlay && sha256sum product.mjs Dockerfile REVISION WEB_SHA256SUMS > SHA256SUMS)
+          tar -czf .local/private-https-overlay.tar.gz -C .local/private-https-overlay .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: github.ref_name == 'fix/beta19-private-https-origins' || github.ref_name == 'fix/app-account-sharing'
+        with:
+          name: private-https-product-web-${{ github.sha }}
+          path: .local/private-https-overlay.tar.gz
+          if-no-files-found: error
+          retention-days: 7
