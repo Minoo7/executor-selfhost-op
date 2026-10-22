@@ -262,6 +262,17 @@ export const scenarios = plan({
       local: na("Local signs the CLI in with an API key, not a saved session."),
     },
   },
+  deviceLoginBrowserStays: {
+    fixtures: "actors",
+    file: "device-login.spec.ts",
+    title:
+      "The CLI polls while the browser it started stays open, signs in once approved and leaves that browser open",
+    targets: {
+      cloud: scheduled,
+      "self-host": scheduled,
+      local: na("Local signs the CLI in with an API key, not a saved session."),
+    },
+  },
   deviceAuthorizationGrant: {
     fixtures: "actors",
     file: "device-login.spec.ts",
@@ -911,6 +922,16 @@ export const scenarios = plan({
       local: na("Hosted version API scenario"),
     },
   },
+  providerIcons: {
+    fixtures: "actors",
+    file: "provider-icons.spec.ts",
+    title: "Renamed providers use only an unambiguous public host for their fallback logo",
+    targets: {
+      "self-host": scheduled,
+      cloud: scheduled,
+      local: na("Hosted deployment fixture; the shared dashboard renders local provider icons"),
+    },
+  },
   appIcons: {
     fixtures: "actors",
     file: "app-icons.spec.ts",
@@ -1148,6 +1169,42 @@ export const scenarios = plan({
       cloud: managedCloud,
       "self-host": na("Cloud customer SSO"),
       local: na("Cloud customer SSO"),
+    },
+  },
+  selfHostSsoDiscoveryRedirect: {
+    file: "self-host-sso.spec.ts",
+    title: "Self-host SSO stays unavailable when its HTTPS discovery redirects to cleartext",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Cloud customer SSO has its own OIDC scenario."),
+      local: na("Local has no sign-in or SSO."),
+    },
+  },
+  selfHostSsoCleartextSignIn: {
+    file: "self-host-sso.spec.ts",
+    title: "Self-host SSO stays unavailable when discovery names a cleartext sign-in page",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Cloud customer SSO has its own OIDC scenario."),
+      local: na("Local has no sign-in or SSO."),
+    },
+  },
+  selfHostSsoCleartextTokenOrKeys: {
+    file: "self-host-sso.spec.ts",
+    title: "Self-host SSO stays unavailable when discovery names cleartext token or key endpoints",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Cloud customer SSO has its own OIDC scenario."),
+      local: na("Local has no sign-in or SSO."),
+    },
+  },
+  selfHostSsoHttpsEndpoints: {
+    file: "self-host-sso.spec.ts",
+    title: "Self-host SSO signs in over HTTPS endpoints and refuses token or key redirects",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Cloud customer SSO has its own OIDC scenario."),
+      local: na("Local has no sign-in or SSO."),
     },
   },
   localBootstrap: {
@@ -2224,6 +2281,16 @@ export const scenarios = plan({
       local: na("Local does not export product analytics or replay."),
     },
   },
+  productAnalyticsOnboarding: {
+    file: "product-analytics.spec.ts",
+    title:
+      "Cloud product events record onboarding replay with masked team details and setup secrets, but not OAuth returns or consent",
+    targets: {
+      cloud: managedCloud,
+      "self-host": na("Self-host does not export product analytics or replay."),
+      local: na("Local does not export product analytics or replay."),
+    },
+  },
   supportDialog: {
     fixtures: "actors",
     file: "support-dialog.spec.ts",
@@ -2466,6 +2533,35 @@ export const scenarios = plan({
       "self-host": scheduled,
       cloud: na("The shared catalog view and install rule are exercised through self-host."),
       local: na("The shared catalog form is exercised through hosted installation."),
+    },
+  },
+  catalogAgentSearch: {
+    fixtures: "actors",
+    managementApps: ["owner"],
+    file: "catalog-agent-search.spec.ts",
+    title:
+      "Agents search the official app catalog, and an install by URL or unlisted id is refused with the steps to take next",
+    targets: {
+      "self-host": scheduled,
+      cloud: na(
+        "The catalog filters and install refusal are shared code, exercised through self-host.",
+      ),
+      local: na("Local's catalog routes do not take the hosted API's filters."),
+    },
+  },
+  catalogCachedDocument: {
+    fixtures: "actors",
+    file: "catalog-agent-search.spec.ts",
+    title:
+      "An Executor app on apps beta.9 refuses catalog filters from its cached document until a pin-only redeploy",
+    targets: {
+      "self-host": scheduled,
+      cloud: na(
+        "This scenario serves the published beta.9 archive on loopback; Cloud shares the framework and its cache.",
+      ),
+      local: na(
+        "Local regenerates its own Executor app from the template at every start whose template changed.",
+      ),
     },
   },
   cloudCatalogInstall: {
@@ -4598,6 +4694,34 @@ export const scenarios = plan({
       local: na("Local has no hosted sign-in."),
     },
   },
+  selfHostSsoUnverifiedEmail: {
+    file: "self-host-sso.spec.ts",
+    title: "Self-host SSO refuses an email the provider does not verify and says why",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Cloud customer SSO has its own OIDC scenario."),
+      local: na("Local has no sign-in or SSO."),
+    },
+  },
+  selfHostSsoExistingAccountOrDomain: {
+    file: "self-host-sso.spec.ts",
+    title: "Self-host SSO explains a password account it does not link and an unapproved domain",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Cloud customer SSO has its own OIDC scenario."),
+      local: na("Local has no sign-in or SSO."),
+    },
+  },
+  selfHostSsoUserinfoClaims: {
+    file: "self-host-sso.spec.ts",
+    title:
+      "Self-host SSO admits a member whose provider asserts email_verified only at UserInfo, and not when UserInfo names another subject",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Cloud customer SSO uses its own provider registration."),
+      local: na("Local has no hosted sign-in."),
+    },
+  },
   signInSettingsSso: {
     file: "sign-in-settings.spec.ts",
     title:
@@ -5017,6 +5141,33 @@ export const scenarios = plan({
       local: na("Local builds and runs apps through the same workerd compiler as self-host."),
     },
   },
+  largeOpenapiExpandableApp: {
+    fixtures: "actors",
+    file: "large-openapi-app.spec.ts",
+    title:
+      "an OpenAPI app whose resources expand into one another lists its tools in bounded pages, each tool's schema complete, and MCP search ranks them",
+    targets: {
+      "self-host": scheduled,
+      // The attached run checks that a deployed Worker holds the catalog within Cloudflare's
+      // memory limit, as it must Stripe's.
+      cloud: { status: "scheduled", runtime: "attached" },
+      local: na("Local builds and runs apps through the same workerd compiler as self-host."),
+    },
+  },
+  localExpandableOpenapiTools: {
+    file: "local-openapi-tools.spec.ts",
+    title:
+      "the local Tools tab lists an OpenAPI app whose resources expand into one another and shows a selected tool's schemas",
+    targets: {
+      local: scheduled,
+      "self-host": na(
+        "Hosted tools pages read the schema-free index; largeOpenapiExpandableApp lists it.",
+      ),
+      cloud: na(
+        "Hosted tools pages read the schema-free index; largeOpenapiExpandableApp lists it.",
+      ),
+    },
+  },
   cloudBuildReuse: {
     fixtures: "actors",
     file: "cloud-build-reuse.spec.ts",
@@ -5365,6 +5516,17 @@ export const scenarios = plan({
     fixtures: "actors",
     file: "tool-call-overhead.spec.ts",
     title: "Executor time covers a tool that writes and reads its SQL database",
+    targets: {
+      "self-host": scheduled,
+      cloud: managedCloud,
+      local: na("This scenario uses hosted MCP; the runtime and collector are shared with Local."),
+    },
+  },
+  toolCallOverheadDatabaseFacets: {
+    fixtures: "actors",
+    file: "tool-call-overhead.spec.ts",
+    title:
+      "Executor time counts a fresh facet for each database call that finds it idle, and overlapping calls share one",
     targets: {
       "self-host": scheduled,
       cloud: managedCloud,
@@ -7336,7 +7498,7 @@ export const scenarios = plan({
   },
   selfHostOnboarding: {
     file: "self-host-onboarding.spec.ts",
-    title: "Self-host administrator setup opens the agent handoff before Apps",
+    title: "Self-host administrator setup connects accounts and an agent before Apps",
     targets: {
       "self-host": scheduled,
       cloud: na("Cloud has its own team creation journey."),
@@ -7364,6 +7526,26 @@ export const scenarios = plan({
     title:
       "Cloud onboarding can skip a passkey and returning email sign-in keeps the existing team",
     targets: cloudOnboarding,
+  },
+  // The flag stub and the collector that receives the exposure exist only in a managed local
+  // Cloud; deployed stages evaluate the stage project's draft flag and serve the control.
+  onboardingAssistantFirst: {
+    file: "cloud-onboarding-experiment.spec.ts",
+    title:
+      "Cloud onboarding experiment assistant_first connects the assistant, then accounts, then sends the first prompt",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  onboardingAccountsFirst: {
+    file: "cloud-onboarding-experiment.spec.ts",
+    title:
+      "Cloud onboarding experiment accounts_first connects accounts, then the assistant, then sends the first prompt",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  onboardingExperimentUnavailable: {
+    file: "cloud-onboarding-experiment.spec.ts",
+    title:
+      "Cloud onboarding experiment serves accounts first without an exposure when its flag is unavailable",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
   },
   // The v1 check reads the emulated v1 database only a managed local Cloud has, and its
   // scenarios write that database; deployed stages leave the check off.
