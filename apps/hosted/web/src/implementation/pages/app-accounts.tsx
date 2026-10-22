@@ -1,9 +1,10 @@
 import { useContext, useState } from "react";
-import { RegistryContext, useAtomSet, useAtomMount } from "@effect/atom-react";
-import { AtomRegistry } from "effect/reactivity";
+import { RegistryContext, useAtomSet, useAtomMount, useAtomValue } from "@effect/atom-react";
+import { AtomRegistry, AsyncResult } from "effect/reactivity";
 import { Effect, Option } from "effect";
 import { useQuery } from "@executor-js/ui/dashboard/context";
-import { appAccessAtom } from "../../contracts/resource-access.ts";
+import { appAccessAtom, resourceDirectoryAtom } from "../../contracts/resource-access.ts";
+import { sessionAtom } from "../../contracts/auth.ts";
 import type { Provider, AccountRequirement, AccountScope, App } from "@executor-js/sdk";
 import {
   AppAccounts as SharedAccounts,
@@ -34,7 +35,7 @@ import {
   disconnectAccountAtom,
 } from "../../contracts/accounts.ts";
 import type { HostedError } from "../../contracts/errors.ts";
-import { HostedAccountDialog } from "./account-actions.tsx";
+import { HostedAccountDialog, type AccountDialogKind } from "./account-actions.tsx";
 
 /** A requirement's sign-in methods, OAuth first: connecting a new account starts with the first. */
 const methodsOf = (requirement: AccountRequirement) =>
@@ -69,6 +70,14 @@ export function AppAccounts({
 }) {
   const { organization } = useOrganizationRoute();
   const { data } = useQuery(appAccessAtom({ organization, app: app.id }));
+  const directory = useQuery(resourceDirectoryAtom(organization));
+  const managed = useQuery(resourceDirectoryAtom(organization, "managed"));
+  const session = AsyncResult.value(useAtomValue(sessionAtom));
+  const user = Option.isSome(session) ? session.value?.user.id : undefined;
+  const accessOf = (account: AccountSummary) =>
+    [directory.data, managed.data]
+      .flatMap((data) => (Option.isSome(data) ? data.value.accounts : []))
+      .find((entry) => entry.account.id === account.id)?.access;
   const canUse = Option.isSome(data) && data.value.canUse;
   const deployed = app.activeDeployment !== null;
   const registry = useContext(RegistryContext);
@@ -92,7 +101,10 @@ export function AppAccounts({
     /** Set when replacing this account's credentials rather than adding an account. */
     readonly account?: AccountSummary | undefined;
   }>();
-  const [renaming, setRenaming] = useState<AccountSummary["id"]>();
+  const [dialog, setDialog] = useState<{
+    readonly account: AccountSummary["id"];
+    readonly kind: AccountDialogKind;
+  }>();
   const [connecting, setConnecting] = useState(false);
   // Reconnecting through the app shows the hosts this app's declaration grants. Replacing an
   // account's credentials needs use of the account.
@@ -126,54 +138,84 @@ export function AppAccounts({
     links: readonly RequirementLink<AccountSummary>[],
     editable: boolean,
     readOnly: string,
-  ): ScopeAccounts<HostedError> =>
-    editable
-      ? {
-          links,
-          edit: editing(scope),
-          revalidate,
-          accountMenu: (account, slot, requirement, linked) =>
-            linked && (
-              <LinkedAccountMenu
-                label={account.label || "Unnamed account"}
-                unlink={unlinkAccountAtom({
-                  ...target(scope),
-                  requirement: slot,
-                  account: account.id,
-                })}
-                Failure={HostedFailure}
-                onUnlinked={() => void unused.check(account.id)}
-              >
-                {usable(account) && (
-                  <DropdownMenuItem onSelect={() => setRenaming(account.id)}>
-                    Edit details
-                  </DropdownMenuItem>
-                )}
-                {usable(account) && (
-                  <DropdownMenuItem
-                    disabled={connecting}
-                    onSelect={() => reconnect(scope, slot, account)}
-                  >
-                    {requirement.definition.auth[account.method]?.type === "oauth2"
-                      ? "Reconnect"
-                      : "Update credentials"}
-                  </DropdownMenuItem>
-                )}
-              </LinkedAccountMenu>
-            ),
-          reconnectAction: (account, slot) =>
-            usable(account) && (
-              <Button
-                variant="outline"
-                size="sm"
+  ): ScopeAccounts<HostedError> => ({
+    links,
+    ...(editable ? { edit: editing(scope), revalidate } : { readOnly }),
+    accountMeta: (account) => {
+      const access = accessOf(account);
+      if (!access) return null;
+      let label = "Personal";
+      if (access.ownership.kind === "shared") {
+        label =
+          access.ownership.audience.kind === "everyone"
+            ? "Shared · Everyone"
+            : "Shared · Selected groups";
+      }
+      return <span className="rounded border px-1.5 py-0.5 text-[10px]">{label}</span>;
+    },
+    accountMenu: (account, slot, requirement, linked) => {
+      const access = accessOf(account);
+      return (
+        linked &&
+        (editable || access?.canManage) && (
+          <LinkedAccountMenu
+            label={account.label || "Unnamed account"}
+            unlink={
+              editable
+                ? unlinkAccountAtom({
+                    ...target(scope),
+                    requirement: slot,
+                    account: account.id,
+                  })
+                : undefined
+            }
+            Failure={HostedFailure}
+            onUnlinked={() => void unused.check(account.id)}
+          >
+            {editable && usable(account) && (
+              <DropdownMenuItem onSelect={() => setDialog({ account: account.id, kind: "edit" })}>
+                Edit details
+              </DropdownMenuItem>
+            )}
+            {editable && usable(account) && (
+              <DropdownMenuItem
                 disabled={connecting}
-                onClick={() => reconnect(scope, slot, account)}
+                onSelect={() => reconnect(scope, slot, account)}
               >
-                Reconnect
-              </Button>
-            ),
-        }
-      : { links, readOnly };
+                {requirement.definition.auth[account.method]?.type === "oauth2"
+                  ? "Reconnect"
+                  : "Update credentials"}
+              </DropdownMenuItem>
+            )}
+            {access?.canManage && (
+              <DropdownMenuItem onSelect={() => setDialog({ account: account.id, kind: "access" })}>
+                {access.ownership.kind === "personal" ? "Share account" : "Manage access"}
+              </DropdownMenuItem>
+            )}
+            {access?.ownership.kind === "shared" && access.canManage && access.creator === user && (
+              <DropdownMenuItem
+                onSelect={() => setDialog({ account: account.id, kind: "personal" })}
+              >
+                Make personal
+              </DropdownMenuItem>
+            )}
+          </LinkedAccountMenu>
+        )
+      );
+    },
+    reconnectAction: (account, slot) =>
+      editable &&
+      usable(account) && (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={connecting}
+          onClick={() => reconnect(scope, slot, account)}
+        >
+          Reconnect
+        </Button>
+      ),
+  });
   const notDeployed = "Deploy this app to link accounts.";
   return (
     <>
@@ -222,8 +264,13 @@ export function AppAccounts({
           />
         )}
       </ConnectionModal>
-      {renaming && (
-        <HostedAccountDialog id={renaming} dialog="edit" onClose={() => setRenaming(undefined)} />
+      {dialog && (
+        <HostedAccountDialog
+          key={`${dialog.account}:${dialog.kind}`}
+          id={dialog.account}
+          dialog={dialog.kind}
+          onClose={() => setDialog(undefined)}
+        />
       )}
     </>
   );

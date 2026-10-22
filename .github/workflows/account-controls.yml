@@ -2,7 +2,8 @@ name: Beta.19 account controls
 
 on:
   push:
-    branches: [fix/beta19-preserve-account-controls, feat/credential-file-upload]
+    branches:
+      [fix/beta19-preserve-account-controls, feat/credential-file-upload, fix/app-account-sharing]
   workflow_dispatch:
 
 permissions:
@@ -25,4 +26,4 @@ jobs:
       - run: bun run check
       - run: bun run docs:validate
       - run: bun run e2e:prepare
-      - run: bun run e2e:self-host --workers 2 --test-name 'Account creators convert|App RPC delivers|React app deployments compile Tailwind|Hosted dashboard runs of approval-gated|Group sharing forms retain|Groups enforce private|Credential files preserve PEM|Pasted credentials are named|The credential form shows|the connect form says|an app manager without use of an app-account webhook'
+      - run: bun run e2e:self-host --workers 2 --test-name 'App accounts show sharing|Account creators convert|App RPC delivers|React app deployments compile Tailwind|Hosted dashboard runs of approval-gated|Group sharing forms retain|Groups enforce private|Credential files preserve PEM|Pasted credentials are named|The credential form shows|the connect form says|an app manager without use of an app-account webhook'

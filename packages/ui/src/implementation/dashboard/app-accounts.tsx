@@ -307,6 +307,7 @@ export interface ScopeAccounts<E> {
   readonly edit?: LinkEditing<E> | undefined;
   /** Why the caller cannot change these links, shown with the greyed-out list. */
   readonly readOnly?: string | undefined;
+  readonly accountMeta?: ((account: AccountSummary) => ReactNode) | undefined;
   /** Each account's menu, such as editing or reconnecting it. */
   readonly accountMenu?:
     | ((
@@ -545,6 +546,7 @@ function ReadOnlyChoices<E>({
       )}
       <AccountAvatar info={account.health?.info} className="size-5" />
       <span className="min-w-0 flex-1 break-words">{accountName(account)}</span>
+      {data.accountMeta?.(account)}
       <AccountStatus app={app} account={account} />
       {data.accountMenu?.(account, slot, requirement, true)}
     </li>
@@ -732,6 +734,7 @@ function ChoiceRow<E>({
         <span className="min-w-0 flex-1 break-words">{name}</span>
       </label>
       {pending && <Spinner className="size-3.5 text-muted-foreground" />}
+      {data.accountMeta?.(account)}
       <AccountStatus
         app={app}
         account={account}

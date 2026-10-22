@@ -1740,6 +1740,16 @@ export const scenarios = plan({
       local: na("Local has no organization sharing policy."),
     },
   },
+  appAccountSharing: {
+    fixtures: "actors",
+    file: "app-account-sharing.spec.ts",
+    title: "App accounts show sharing and support creator-authorized sharing changes in place",
+    targets: {
+      "self-host": scheduled,
+      cloud: scheduled,
+      local: na("Local has no organization sharing policy."),
+    },
+  },
   resourceSharing: {
     fixtures: "actors",
     file: "resource-sharing.spec.ts",
