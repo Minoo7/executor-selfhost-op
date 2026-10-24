@@ -1895,6 +1895,17 @@ export const scenarios = plan({
       local: na("Local runs schedules in its own server process."),
     },
   },
+  cloudScheduleConnectionsClose: {
+    fixtures: "actors",
+    file: "cloud-database-placement.spec.ts",
+    title:
+      "Cloud's schedule coordinator closes its database connections when a pass ends, so it can hibernate between wakes",
+    targets: {
+      cloud: managedCloud,
+      "self-host": na("Self-host runs schedules in its own server process."),
+      local: na("Local runs schedules in its own server process."),
+    },
+  },
   cloudScheduleWakeStream: {
     fixtures: "actors",
     file: "cloud-schedule-wakes.spec.ts",
@@ -2077,6 +2088,16 @@ export const scenarios = plan({
     fixtures: "actors",
     file: "mcp-user-agent.spec.ts",
     title: "Remote MCP requests supply User-Agent and preserve an app's own",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Uses a loopback upstream to exercise the shared Worker MCP transport."),
+      local: na("Exercises the hosted app deploy and tool call APIs."),
+    },
+  },
+  mcpRefusedEventStream: {
+    fixtures: "actors",
+    file: "mcp-event-stream.spec.ts",
+    title: "Remote MCP tools stay available when the server refuses the optional event stream",
     targets: {
       "self-host": scheduled,
       cloud: na("Uses a loopback upstream to exercise the shared Worker MCP transport."),
@@ -2790,6 +2811,20 @@ export const scenarios = plan({
       cloud: managedCloud,
       local: na(
         "Hosted app routes; local runs apps with the same runner and has no outbound network in front of it.",
+      ),
+    },
+  },
+  appFetchBrotliUndecoded: {
+    fixtures: "actors",
+    file: "app-fetch-brotli.spec.ts",
+    title:
+      "an app's fetch receives a Brotli-encoded response as the bytes the service sent, never decoded by the runtime",
+    targets: {
+      "self-host": scheduled,
+      // The scenario reaches a loopback fixture.
+      cloud: managedCloud,
+      local: na(
+        "Hosted app routes; local runs apps with the same runner and the same compatibility flags.",
       ),
     },
   },
@@ -7612,6 +7647,18 @@ export const scenarios = plan({
       "Cloud v1 import keeps a workspace that fails verification frozen in v1, and accepts MCP requests v1 forwards for an imported workspace, with a new signed bearer for each request of a session, scopes a toolkit's bearer to the caller's own copy, and refuses a wrong signature, an expired or too long-lived bearer, an account, organization or toolkit copy the import never mapped, and a toolkit claim without its connection",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
+  v1HandoffSignIn: {
+    file: "cloud-v1-session-handoff.spec.ts",
+    title:
+      "Cloud v1 import hands a moved workspace's member from their v1 session to v2: the handoff starts a session for the user the import mapped and opens the organization with no referrer, a browser signed in as them is only redirected, one signed in as another member keeps its session, and a used token opens sign-in",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  v1HandoffRefusals: {
+    file: "cloud-v1-session-handoff.spec.ts",
+    title:
+      "Cloud v1 import opens v2 sign-in without a session for a handoff with a wrong signature, an expired or too long-lived token, another audience or version, a WorkOS user the import never mapped, or a member who has left the organization",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
   v1ImportToolkitCalls: {
     file: "cloud-v1-import.spec.ts",
     title:
@@ -7640,7 +7687,7 @@ export const scenarios = plan({
   v1ImportFirstParty: {
     file: "cloud-v1-import.spec.ts",
     title:
-      "Cloud v1 import moves connections that signed in through Executor's own apps to v2's operator client of the same name, including a GitHub-shaped MCP server that names the scopeless client's endpoints, which renews them with the granted scopes, sends the token to each of a service's hosts the client reaches, and refuses an app v2 does not offer, a scope it does not allow and a host its tokens never reach",
+      "Cloud v1 import moves connections that signed in through Executor's own apps to v2's operator client of the same name, including a GitHub-shaped MCP server that names the scopeless client's endpoints, which renews them with the granted scopes, sends the token to each of a service's hosts the client reaches, and refuses an app v2 does not offer, a scope it does not allow, a host its tokens never reach, a server that does not sign in with it and one whose resource metadata names another resource, each of which its dry run refuses first for the same reason",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
   v1ImportBuilds: {
@@ -7659,6 +7706,12 @@ export const scenarios = plan({
     file: "cloud-v1-import-run.spec.ts",
     title:
       "Cloud v1 import moves a shared workspace on the server and cuts it over once it verifies: the oldest admin owns it, members keep their roles without a welcome email, org connections become shared accounts linked for everyone and members' their own, a member's approve rule is dropped while their block applies to everyone, every member gets their own copy of an org toolkit, and a former member's rows stay behind",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  v1ImportAllowed: {
+    file: "cloud-v1-import-run.spec.ts",
+    title:
+      "Cloud v1 import writes only organizations with a row in its allow table, refuses one without a row, a start that adds one and a start that pages through v1, writing nothing to v1 or v2, and runs dry runs whatever the table holds",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
   v1ImportDryRun: {
