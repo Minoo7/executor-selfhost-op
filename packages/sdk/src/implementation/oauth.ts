@@ -42,6 +42,8 @@ import {
   type OAuthClientSetup,
   OAuthCompletionFailed,
   type OAuthCompletionReason,
+  OAuthResourceIndicator,
+  type OAuthResourceSource,
   OAuthAttempt,
   OAuthAttemptId,
   OAuthAttemptRecord,
@@ -66,6 +68,7 @@ import {
   type OAuthOptions,
   type OAuthTokenServer,
   type ImportOAuthGrant,
+  type ImportedGrantTokens,
   OAuthGrantNotImportable,
 } from "../contracts/oauth.ts";
 import {
@@ -393,11 +396,14 @@ const outcome = (error: OAuthProtocolFailed) =>
             : "incompatible";
 
 /**
- * Classify a failed renewal. Only RFC 6749 §5.2's `invalid_grant` says this account's grant has
- * ended: its refresh token was revoked, expired or already used. Every other refusal keeps the
- * grant, because it says nothing about it:
+ * Classify a failed renewal. Only RFC 6749 §5.2's `invalid_grant`, or a service's own code for
+ * it such as Supabase Auth's `refresh_token_already_used`, GitHub's `bad_refresh_token`,
+ * Slack's `invalid_refresh_token` or AWS Sign-In's `TOKEN_EXPIRED`, says this account's grant
+ * has ended, whatever the HTTP status:
+ * its refresh token was revoked, expired or already used. Every other refusal keeps the grant,
+ * because it says nothing about it:
  *
- * - `invalid_client`, `unauthorized_client` and a 401 are about the OAuth client, which every
+ * - `invalid_client`, `unauthorized_client` and any other 401 are about the OAuth client, which every
  *   account on that client shares. They are also what a fault in Executor's own client
  *   authentication produces; ending every grant for that would force every user to sign in again
  *   once it is fixed. The account reports `client_rejected` and renews again on its next use.
@@ -479,8 +485,43 @@ const clientCredentialsFailed = (error: OAuthProtocolFailed) => {
   });
 };
 
+/**
+ * The resource indicator a sign-in sent and where it came from, or why it sent none. Undefined for
+ * an attempt started before its source was kept, which leaves a refusal unnamed.
+ */
+const sentResource = (
+  value: typeof HttpUrl.Type | undefined,
+  source: OAuthResourceSource | undefined,
+): OAuthResourceIndicator | undefined => {
+  if (source === undefined) return undefined;
+  const indicator = { value: value ?? null, source };
+  return Schema.is(OAuthResourceIndicator)(indicator) ? indicator : undefined;
+};
+
+/**
+ * RFC 8707 §2: the service refused the resource indicator the sign-in sent, or its absence. Only
+ * a refusal is: a 429 or an outage answered with `invalid_target` keeps its own classification and
+ * Retry-After.
+ */
+const resourceRefused = (
+  stage: "authorize" | "exchange",
+  error: OAuthProtocolFailed,
+  sent: OAuthResourceIndicator | undefined,
+) =>
+  error.diagnostics?.providerCode === "invalid_target" && sent !== undefined
+    ? new OAuthCompletionFailed({
+        cause: causeOf(stage, error),
+        ...serviceErrorOf(error),
+        reason: "resource_rejected",
+        resource: sent,
+      })
+    : undefined;
+
 /** A failed token exchange. Callback validation runs first, so every failure here reached the token endpoint or failed before sending. */
-const exchangeFailed = (error: OAuthProtocolFailed) => {
+const exchangeFailed = (error: OAuthProtocolFailed, sent: OAuthResourceIndicator | undefined) => {
+  const refused =
+    outcome(error) === "rejected" ? resourceRefused("exchange", error, sent) : undefined;
+  if (refused !== undefined) return refused;
   const reason =
     error.reason === "invalid_client" || error.reason === "unsupported"
       ? error.reason
@@ -532,7 +573,10 @@ const secretMethod = (supported: readonly string[] | undefined) =>
  * A failed authorization response: its RFC 9207 issuer, then an RFC 6749 §4.1.2.1 error code.
  * Codes outside the recorded vocabulary are still authorization errors, never a cancellation.
  */
-const callbackFailed = (error: OAuthProtocolFailed) =>
+const callbackFailed = (error: OAuthProtocolFailed, sent: OAuthResourceIndicator | undefined) =>
+  (error.code === "OAUTH_AUTHORIZATION_RESPONSE_ERROR"
+    ? resourceRefused("authorize", error, sent)
+    : undefined) ??
   new OAuthCompletionFailed({
     cause: causeOf("authorize", error),
     ...serviceErrorOf(error),
@@ -1109,12 +1153,20 @@ export const makeOAuth = (
         existing === undefined && firstParty === undefined && registration === "manual"
           ? ("client-required" as const)
           : ("automatic" as const);
+      const resource =
+        firstParty !== undefined
+          ? sentResource(firstParty.client.server.resource, "operator")
+          : sentResource(discovered.resource, discovered.resourceSource);
+      // Discovery records a source with every resource it chooses, or with its absence.
+      if (resource === undefined)
+        return yield* Effect.die(new Error("OAuth discovery recorded no resource source"));
       if (method.grant === "client_credentials")
         return {
           mode,
           scopes: discovered.scopes,
           grant: method.grant,
           tokenEndpointAuthMethod: method.tokenEndpointAuthMethod,
+          resource,
         } satisfies OAuthClientSetup;
       const operator =
         firstParty === undefined ? {} : { firstParty: { label: firstParty.client.label } };
@@ -1139,6 +1191,7 @@ export const makeOAuth = (
           ? {}
           : { tokenEndpointAuthMethod: discovered.tokenEndpointAuthMethod }),
         ...(user.length === 0 ? {} : { userScopes: user }),
+        resource,
       } satisfies OAuthClientSetup;
     }).pipe(Effect.withSpan("oauth.setup"));
 
@@ -2025,11 +2078,15 @@ export const makeOAuth = (
       const holding = holder?.kind === "held" ? holder.row : undefined;
       if (holding !== undefined && !(yield* clientAuthorized(holding)))
         return yield* failed("client_unavailable");
+      const sent = sentResource(
+        operating.resource,
+        isFirstPartyAttempt(attempt) ? "operator" : attempt.resourceSource,
+      );
       const parameters = yield* protocol
         .callback(operating, callback)
-        .pipe(Effect.mapError(callbackFailed));
+        .pipe(Effect.mapError((error) => callbackFailed(error, sent)));
       const tokens = yield* protocol.exchange(operating, parameters).pipe(
-        Effect.mapError(exchangeFailed),
+        Effect.mapError((error) => exchangeFailed(error, sent)),
         Effect.catchIf(
           (error) => error.reason === "invalid_client" && storedRef?.source === "registered",
           (error) =>
@@ -3299,12 +3356,104 @@ export const makeOAuth = (
       Effect.withSpan("oauth.checkGrant"),
     );
 
+  /**
+   * Bring an imported account's grant up to date with the tokens the issuing product holds now
+   * (`OAuthGrantImport.refreshImportedGrant`). The grant keeps its client and renewal settings;
+   * only its tokens are replaced, and only when the product holds another refresh token than the
+   * grant and the grant needs reconnecting, or the product's access token expires later, so it
+   * renewed after this grant did. A grant that needs reconnecting with the product's own refresh
+   * token already used it, and the service refused it. A grant being renewed is decided once that
+   * renewal has saved its result. A grant reconnected since the import, one without a refresh token
+   * to compare, and one that changes while this runs are kept.
+   */
+  const refreshImportedGrant = (account: AccountId, tokens: ImportedGrantTokens) =>
+    Effect.gen(function* () {
+      const stored = yield* query(() =>
+        db.findFirst("accounts", { where: (b) => b("id", "=", account) }),
+      );
+      if (stored === null || stored.credentialGeneration > 0) return "kept";
+      let row = yield* query(() =>
+        db.findFirst("oauthGrants", { where: (b) => b("id", "=", account) }),
+      );
+      // A renewal holds the grant: wait for its result, which decides whether v2's tokens still
+      // work. A claim unconfirmed for the renewal lease was abandoned, and its row still holds the
+      // grant it started from.
+      while (
+        row !== null &&
+        row.status !== "reconnect" &&
+        !row.status.startsWith("ready_") &&
+        (heldClaims.has(row.status) ||
+          (yield* Clock.currentTimeMillis) - row.updatedAt.getTime() <= renewalLease)
+      ) {
+        yield* Effect.sleep("100 millis");
+        row = yield* query(() =>
+          db.findFirst("oauthGrants", { where: (b) => b("id", "=", account) }),
+        );
+      }
+      if (row === null) return "kept";
+      const read = row;
+      const reconnect = read.status === "reconnect";
+      const grant = yield* decrypt(account, read.encrypted, OAuthGrant);
+      if (grant.grant === "client_credentials" || (grant.generation ?? 0) > 0) return "kept";
+      const refreshToken =
+        tokens.refreshToken === undefined ? undefined : Redacted.value(tokens.refreshToken);
+      if (refreshToken === undefined || refreshToken === grant.refreshToken) return "kept";
+      const renewedLater =
+        tokens.expiresAt !== undefined &&
+        grant.expiresAt !== undefined &&
+        tokens.expiresAt > grant.expiresAt;
+      if (!reconnect && !renewedLater) return "kept";
+      const fields = yield* project(grant.response, {
+        ...grant.fields,
+        access_token: Redacted.value(tokens.accessToken),
+        token_type: "Bearer",
+      });
+      const replaced = yield* decode(OAuthGrant, {
+        ...Struct.omit(grant, ["expiresAt"]),
+        fields,
+        ...(refreshToken === undefined ? {} : { refreshToken }),
+        ...(tokens.expiresAt === undefined ? {} : { expiresAt: tokens.expiresAt }),
+      });
+      const encrypted = yield* encrypt(account, replaced);
+      const encryptedCredentials = yield* encrypt(account, fields);
+      const ready = `ready_${yield* nextId}`;
+      const updatedAt = new Date(yield* Clock.currentTimeMillis);
+      return yield* transaction(db, (tx) =>
+        Effect.gen(function* () {
+          // Written only over the grant read above, so a renewal or reconnect meanwhile stands.
+          yield* query(() =>
+            tx.updateMany("oauthGrants", {
+              where: (b) =>
+                b.and(
+                  b("id", "=", account),
+                  b("status", "=", read.status),
+                  b("encrypted", "=", read.encrypted),
+                ),
+              set: { status: ready, encrypted, updatedAt },
+            }),
+          );
+          const written = yield* query(() =>
+            tx.findFirst("oauthGrants", { where: (b) => b("id", "=", account) }),
+          );
+          if (written?.status !== ready) return "kept" as const;
+          yield* query(() =>
+            tx.updateMany("accounts", {
+              where: (b) => b("id", "=", account),
+              set: { encryptedCredentials },
+            }),
+          );
+          return "replaced" as const;
+        }),
+      );
+    }).pipe(Effect.withSpan("oauth.refreshImportedGrant"));
+
   return {
     revocation,
     clients,
     connections: { oauthSetup, startOAuth, completeOAuth },
     importGrant,
     checkGrant,
+    refreshImportedGrant,
     /** The operator's client `id` as the importer checks a grant against it, without its secret. */
     firstPartyClient: (id: string) => {
       const client = [...firstPartyClients.values()].find((candidate) => candidate.id === id);

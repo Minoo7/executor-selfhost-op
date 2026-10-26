@@ -85,6 +85,41 @@ const refreshFailures = {
     body: { ok: false, error: "internal_error", ...privateError },
   },
   invalid_grant: { status: 400, body: { error: "invalid_grant", ...privateError } },
+  // Supabase Auth's OAuth server refuses a refresh with its own body instead of RFC 6749's
+  // `error`. Its `refresh_token_already_used` means the grant has ended; other codes do not.
+  supabase_refusal: {
+    status: 400,
+    body: { code: 400, error_code: "validation_failed", msg: "PRIVATE_PROVIDER_ERROR" },
+  },
+  supabase_already_used: {
+    status: 400,
+    body: { code: 400, error_code: "refresh_token_already_used", msg: "PRIVATE_PROVIDER_ERROR" },
+  },
+  // GitHub answers an invalid or expired refresh token with HTTP 200 and its own code. Slack
+  // answers HTTP 200 with `ok: false` and its own codes for an invalid refresh token and for a
+  // deleted user or workspace or a removed app.
+  github_bad_refresh_token: { status: 200, body: { error: "bad_refresh_token", ...privateError } },
+  slack_invalid_refresh_token: {
+    status: 200,
+    body: { ok: false, error: "invalid_refresh_token", ...privateError },
+  },
+  slack_token_revoked: {
+    status: 200,
+    body: { ok: false, error: "token_revoked", ...privateError },
+  },
+  // AWS Sign-In answers a refresh token whose session has ended with HTTP 401 and a code of its
+  // own, uppercase, with a `message` instead of `error_description`, and one revoked by a password
+  // change with HTTP 403. Tesla answers a refresh token used again, or one the user revoked, with
+  // HTTP 401 and OpenID Connect's `login_required`.
+  aws_token_expired: {
+    status: 401,
+    body: { error: "TOKEN_EXPIRED", message: "PRIVATE_PROVIDER_ERROR" },
+  },
+  aws_user_credentials_changed: {
+    status: 403,
+    body: { error: "USER_CREDENTIALS_CHANGED", message: "PRIVATE_PROVIDER_ERROR" },
+  },
+  tesla_login_required: { status: 401, body: { error: "login_required", ...privateError } },
 } satisfies Record<string, TokenError>;
 type RefreshFailure = keyof typeof refreshFailures;
 /** Seconds a token lasts when a scenario needs it to expire before the next call. */
@@ -399,6 +434,7 @@ layer(HostedLive, { excludeTestServices: true })("OAuth refresh resilience", (it
             providerError: "invalid_scope",
           },
           { failure: "slack_internal_error", reason: "renewal_rejected", status: 200 },
+          { failure: "supabase_refusal", reason: "renewal_rejected", status: 400 },
         ];
         for (const scenario of transient) {
           yield* Effect.sleep(pastShortLifetime);
@@ -518,6 +554,79 @@ layer(HostedLive, { excludeTestServices: true })("OAuth refresh resilience", (it
         const again = yield* read();
         expect(again.status, JSON.stringify(again.body)).toBe(409);
         expect(yield* refreshes).toBe(beforeRefusal + 1);
+      }),
+    ),
+  );
+  it.effect(scenarios.oauthRenewalEndedGrantCodes.title, (context) =>
+    withHostedCase(
+      context,
+      Effect.gen(function* () {
+        const { issuer, provider, connect, read, refreshes, assertPrivate, spans, evidence } =
+          yield* renewalFixture;
+        // A service's own code for a refresh token that can never be used again ends the grant
+        // as `invalid_grant` does, at any HTTP status, so the account asks to reconnect instead of
+        // renewing on every use: Supabase Auth's for a token used again, GitHub's for an invalid
+        // or expired one, Slack's for an invalid one or a removed installation, AWS Sign-In's for
+        // an ended session or changed password, and Tesla's for one used again or revoked. A 401
+        // with one of these is not a refusal of the client. The trace names the code.
+        const ended: ReadonlyArray<{
+          readonly failure: RefreshFailure;
+          readonly status: number;
+          readonly code: string;
+        }> = [
+          { failure: "supabase_already_used", status: 400, code: "refresh_token_already_used" },
+          { failure: "github_bad_refresh_token", status: 200, code: "bad_refresh_token" },
+          { failure: "slack_invalid_refresh_token", status: 200, code: "invalid_refresh_token" },
+          { failure: "slack_token_revoked", status: 200, code: "token_revoked" },
+          { failure: "aws_token_expired", status: 401, code: "token_expired" },
+          {
+            failure: "aws_user_credentials_changed",
+            status: 403,
+            code: "user_credentials_changed",
+          },
+          { failure: "tesla_login_required", status: 401, code: "login_required" },
+        ];
+        for (const scenario of ended) {
+          const account = yield* connect(`Synthetic ${scenario.failure} account`);
+          yield* issuer.configure({ tokenError: refreshFailures[scenario.failure] });
+          const before = yield* refreshes;
+          const refusedRead = yield* read();
+          expect(
+            refusedRead.status,
+            `${scenario.failure}: ${JSON.stringify(refusedRead.body)}`,
+          ).toBe(409);
+          expect(yield* body(Failure, refusedRead), scenario.failure).toMatchObject({
+            _tag: "OAuthReconnectRequired",
+            account,
+            cause: { stage: "refresh", status: scenario.status },
+          });
+          assertPrivate(refusedRead.body);
+          const trace = yield* spans;
+          expect(
+            trace.data.find(
+              ({ span }) =>
+                span.operationName === "oauth.resolve" &&
+                span.tags["oauth.renewal.outcome"] !== undefined,
+            )?.span.tags,
+            scenario.failure,
+          ).toMatchObject({
+            "oauth.provider.id": provider,
+            "oauth.renewal.outcome": "reconnect",
+            "oauth.reconnect.reason": "renewal_refused",
+          });
+          expect(
+            trace.data.find(({ span }) => span.operationName === "oauth.refresh")?.span.tags,
+            scenario.failure,
+          ).toMatchObject({ "oauth.error.known_provider_code": scenario.code });
+          assertPrivate(trace);
+          yield* evidence.json(`refresh-${scenario.failure}-trace.json`, trace);
+          yield* issuer.configure({ tokenError: null });
+          const stillEnded = yield* read();
+          expect(stillEnded.status, `${scenario.failure}: ${JSON.stringify(stillEnded.body)}`).toBe(
+            409,
+          );
+          expect(yield* refreshes, scenario.failure).toBe(before + 1);
+        }
       }),
     ),
   );

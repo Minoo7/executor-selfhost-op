@@ -250,7 +250,8 @@ export default Api.make(
     );
     const v1Import = yield* v1ImportRoutes(
       yield* V1ImportWorkflow.pipe(
-        Effect.provide(Layer.mergeAll(executor, auth.mcpIdentity, v1ImportConfiguration)),
+        // A paid organization's subscription carries over to v2's billing, which syncs its seats.
+        Effect.provide(Layer.mergeAll(executor, auth.mcpIdentity, v1ImportConfiguration, billing)),
       ),
     ).pipe(Effect.provide(v1ImportConfiguration));
     const removals = Layer.merge(
@@ -559,6 +560,27 @@ export default Api.make(
         "/api/internal/v1-import/orgs/:organization/rollback",
         v1Import.rollback,
       ).pipe(HttpRouter.provideRequest(executor)),
+      // The repair deploys apps with the importer's context, which holds the MCP connection store.
+      HttpRouter.add(
+        "POST",
+        "/api/internal/v1-import/orgs/:organization/repair",
+        v1Import.repair,
+      ).pipe(HttpRouter.provideRequest(Layer.mergeAll(executor, auth.mcpIdentity, billing))),
+      HttpRouter.add(
+        "POST",
+        "/api/internal/v1-import/orgs/:organization/restore",
+        v1Import.restore,
+      ).pipe(HttpRouter.provideRequest(executor)),
+      HttpRouter.add(
+        "POST",
+        "/api/internal/v1-import/orgs/:organization/accounts",
+        v1Import.accounts,
+      ).pipe(HttpRouter.provideRequest(Layer.mergeAll(executor, auth.mcpIdentity, billing))),
+      HttpRouter.add(
+        "POST",
+        "/api/internal/v1-import/orgs/:organization/return-billing",
+        v1Import.giveBillingBack,
+      ).pipe(HttpRouter.provideRequest(Layer.merge(executor, billing))),
       jobs.route((job) => backgroundJobs[job]),
       authoringRoutes,
       ...(["login", "login/sso", "create"] as const).map((page) =>

@@ -101,7 +101,13 @@ import {
   type Unsupported,
 } from "./plan.ts";
 import type { V1Snapshot, V1Source } from "./source.ts";
-import { sourceHash, toolkitCopyId, type ImportStore, type MapResult } from "./store.ts";
+import {
+  sourceHash,
+  toolkitCopyConnectionId,
+  toolkitCopyId,
+  type ImportStore,
+  type MapResult,
+} from "./store.ts";
 import { v1ToolPaths } from "./v1-tool-paths.ts";
 
 /** v1's OAuth callback; imported clients keep it, and v1's edge forwards it to v2. */
@@ -155,6 +161,8 @@ export class ItemFailed extends Schema.TaggedError<ItemFailed>()("ItemFailed", {
   reason: Schema.String,
   vault: Schema.optional(Schema.Literals(["missing", "unavailable"])),
   stale: Schema.optional(V1StaleCategory),
+  /** The service did not respond: the item moves when tried again. */
+  outage: Schema.optional(Schema.Literal(true)),
 }) {}
 const fail = (reason: string) => Effect.fail(new ItemFailed({ reason }));
 const failStale = (stale: V1StaleCategory, reason: string) =>
@@ -491,9 +499,19 @@ export type AppAccounts = ReturnType<typeof appMethods>;
 
 const rank = { approve: 1, default: 1.5, require_approval: 2, block: 3 } as const;
 /**
+ * What v1 did with a tool no policy decided, when the app's own default would not do the same: ask,
+ * for an MCP tool whose row v1 stamped as needing approval. v1 asked from that stamp, made from the
+ * server's `destructiveHint` when it last listed the tools; the app's default reads the live hint,
+ * which a server may have dropped since, so the app asks always. OpenAPI and GraphQL defaults
+ * come from the generated source (a method or a mutation), which asks wherever v1 stamped one.
+ * A tool v1 did not stamp keeps the app's default.
+ */
+const unruled = (integration: Pick<IntegrationRow, "plugin_id">, tool: ToolRow) =>
+  integration.plugin_id === "mcp" && tool.requires_approval ? "require_approval" : "default";
+/**
  * Each tool's v1 policy result, combined across its connections and the v1 names it had: the most
- * restrictive, where a connection without a matching policy keeps the tool's own default.
- * `aliases` maps a dropped v1 name to the name the tool keeps.
+ * restrictive, where a connection without a matching policy keeps the tool's own default, pinned
+ * as `unruled` says. `aliases` maps a dropped v1 name to the name the tool keeps.
  *
  * A toolkit's own policies applied only to calls through the toolkit, and v1 ignored the
  * workspace's policies there, but v2 keeps approvals in the app for every caller. A toolkit that
@@ -512,12 +530,14 @@ export const toolActions = (
   const toolkits = decodedToolkits(snapshot);
   for (const tool of tools) {
     const id = `${integration.slug}.${tool.owner}.${tool.connection}.${tool.name}`;
-    const own = resolvePolicy(id, snapshot.policies, snapshot.multiMember) ?? "default";
+    const fallback = unruled(integration, tool);
+    const own = resolvePolicy(id, snapshot.policies, snapshot.multiMember) ?? fallback;
     // The least the app may do for each toolkit that grants the tool: ask when the toolkit asks,
     // keep the tool's default when the toolkit left it to the default.
     const action = toolkits.reduce<PolicyAction | "default">((current, toolkit) => {
       const granted = toolkitAction(toolkit, id);
-      const floor = granted === "require_approval" || granted === "default" ? granted : undefined;
+      const floor =
+        granted === "require_approval" ? granted : granted === "default" ? fallback : undefined;
       return floor !== undefined && rank[floor] > rank[current] ? floor : current;
     }, own);
     const name = Object.hasOwn(aliases, tool.name) ? (aliases[tool.name] ?? tool.name) : tool.name;
@@ -527,7 +547,8 @@ export const toolActions = (
   return actions;
 };
 
-const approvalRules = (actions: ReadonlyMap<string, PolicyAction | "default">) => {
+/** The app's own rules from each tool's action: left out, `never` or `always`. */
+export const approvalRules = (actions: ReadonlyMap<string, PolicyAction | "default">) => {
   const approvals: Record<string, "always" | "never"> = {};
   const omitted: string[] = [];
   for (const [name, action] of actions) {
@@ -536,6 +557,110 @@ const approvalRules = (actions: ReadonlyMap<string, PolicyAction | "default">) =
     else if (action === "require_approval") approvals[name] = "always";
   }
   return { approvals, omitted };
+};
+
+/** A tool name no tool row has: only a rule's `*` in the tool's place matches it. */
+const unlistedName = "\u0000";
+
+/**
+ * Rows for tools v1 had no row for, as each of the integration's connections, and one made later
+ * in either scope, would list them. v1 decided such a tool by its rules once a connection listed
+ * it, so the app decides it the same way.
+ */
+const unlistedRows = (
+  snapshot: Pick<V1Snapshot, "connections">,
+  integration: Pick<IntegrationRow, "slug">,
+  names: Iterable<string>,
+): readonly ToolRow[] => {
+  const addresses = [
+    ...snapshot.connections
+      .filter((connection) => connection.integration === integration.slug)
+      .map(({ owner, subject, name }) => ({ owner, subject, connection: name })),
+    { owner: "org" as const, subject: "", connection: unlistedName },
+    { owner: "user" as const, subject: "", connection: unlistedName },
+  ];
+  return [...names].flatMap((name) =>
+    addresses.map((address) => ({
+      ...address,
+      name,
+      upstream: name,
+      requires_approval: false,
+      listed_at: null,
+    })),
+  );
+};
+
+/** The tool names the workspace's and toolkits' rules for an integration spell out in full. */
+const ruleNames = (snapshot: V1Snapshot, integration: Pick<IntegrationRow, "slug">) => {
+  const names = new Set<string>();
+  const patterns = [
+    ...snapshot.policies.map((policy) => policy.pattern),
+    ...decodedToolkits(snapshot).flatMap((toolkit) =>
+      toolkit.policies.map((policy) => policy.pattern),
+    ),
+  ];
+  for (const pattern of patterns) {
+    const segments = pattern.split(".");
+    if (segments[0] !== integration.slug || segments.length < 4) continue;
+    const name = segments.slice(3);
+    if (!name.includes("*")) names.add(name.join("."));
+  }
+  return names;
+};
+
+/**
+ * v1's result for each name `v1ToolRules` decides, and, on a server that lists tools as it runs
+ * (no `exposed`), the result v1's rules give a name none of them spells out (`unnamed`).
+ */
+export const v1ToolDecisions = (
+  snapshot: V1Snapshot,
+  integration: IntegrationRow,
+  tools: readonly ToolRow[],
+  aliases: Readonly<Record<string, string>> = {},
+  exposed?: readonly string[],
+) => {
+  const listed = toolActions(snapshot, integration, tools, aliases);
+  const unlisted = new Set(
+    [...ruleNames(snapshot, integration), ...(exposed ?? [])].filter(
+      (name) => !listed.has(name) && !Object.hasOwn(aliases, name),
+    ),
+  );
+  const actions: ReadonlyMap<string, PolicyAction | "default"> = new Map([
+    ...listed,
+    ...toolActions(snapshot, integration, unlistedRows(snapshot, integration, unlisted)),
+  ]);
+  const unnamed =
+    exposed === undefined
+      ? toolActions(snapshot, integration, unlistedRows(snapshot, integration, [unlistedName])).get(
+          unlistedName,
+        )
+      : undefined;
+  return { actions, unnamed };
+};
+
+/**
+ * The app's rules from v1's policies: each tool v1 listed (`toolActions`), each tool a rule names
+ * that v1 did not list, such as one the server stopped listing, and each name in `exposed`. v1
+ * decided a tool it listed later by the same rules, so none of these runs with less than v1 gave
+ * it. `exposed` is every name the app can expose, when its source fixes them (OpenAPI); otherwise
+ * the server lists tools as it runs, and a tool no rule names gets what v1's rules give a tool
+ * they do not name (`otherwise`).
+ */
+export const v1ToolRules = (
+  snapshot: V1Snapshot,
+  integration: IntegrationRow,
+  tools: readonly ToolRow[],
+  aliases: Readonly<Record<string, string>> = {},
+  exposed?: readonly string[],
+): Pick<GeneratedToolRules, "approvals" | "omitted" | "otherwise"> => {
+  const { actions, unnamed } = v1ToolDecisions(snapshot, integration, tools, aliases, exposed);
+  const rules = approvalRules(actions);
+  if (exposed !== undefined) return rules;
+  const rule =
+    unnamed === "block" ? "omitted" : unnamed === "require_approval" ? "always" : undefined;
+  return rule === undefined
+    ? rules
+    : { ...rules, otherwise: { rule, known: [...actions.keys()].sort() } };
 };
 
 const missingNames = (missing: readonly string[]) =>
@@ -714,7 +839,15 @@ const leftOutNote = (app: Pick<GeneratedApp, "traced" | "stale" | "dropped">) =>
 
 /** An integration's app source, generated from v1's rows without writing anything. */
 export const generate = (
-  context: { readonly snapshot: V1Snapshot; readonly source: GenerationSource },
+  context: {
+    readonly snapshot: V1Snapshot;
+    readonly source: GenerationSource;
+    /**
+     * False to generate the app as the importer did before it decided tools v1 did not list
+     * (`v1ToolRules`), for the repair of organizations moved before then.
+     */
+    readonly unlistedRules?: boolean;
+  },
   integration: IntegrationRow,
   decoded: ImportableIntegration,
   planned: Pick<AppAccounts, "methods" | "shared" | "fixed" | "dropped">,
@@ -732,6 +865,14 @@ export const generate = (
       ...(fixedAccount === undefined ? {} : { fixedAccount }),
     };
     const left = { traced: [], stale: [], dropped } as const;
+    const toolRules = (
+      tools: readonly ToolRow[],
+      aliases?: Readonly<Record<string, string>>,
+      exposed?: readonly string[],
+    ) =>
+      context.unlistedRules === false
+        ? approvalRules(toolActions(context.snapshot, integration, tools, aliases))
+        : v1ToolRules(context.snapshot, integration, tools, aliases, exposed);
     switch (decoded.plugin) {
       case "mcp": {
         const tools = yield* context.source.tools(tenant, subjects, integration.slug);
@@ -739,7 +880,7 @@ export const generate = (
         if (missing.length > 0) return yield* fail(missingNames(missing));
         const rules: GeneratedToolRules = {
           ...(rename ? { names: { kind: "lower_snake", overrides } } : {}),
-          ...approvalRules(toolActions(context.snapshot, integration, tools, aliases)),
+          ...toolRules(tools, aliases),
         };
         const aliased = Object.entries(aliases).sort(([a], [b]) => (a < b ? -1 : 1));
         const generated = yield* generateMcpSource(
@@ -787,7 +928,7 @@ export const generate = (
           queryParams,
           tools: {
             names: { kind: "graphql_path" },
-            ...approvalRules(toolActions(context.snapshot, integration, tools)),
+            ...toolRules(tools),
           },
           ...healthOf(check),
         });
@@ -912,12 +1053,10 @@ export const generate = (
           queryParams,
           tools: {
             names: { kind: "map", names },
-            ...approvalRules(
-              toolActions(
-                context.snapshot,
-                integration,
-                tools.filter((tool) => !staleNames.has(tool.name)),
-              ),
+            ...toolRules(
+              tools.filter((tool) => !staleNames.has(tool.name)),
+              {},
+              [...exposed].filter((name) => !staleNames.has(name)),
             ),
           },
           ...healthOf(checked?.ok === true ? checked.check : undefined),
@@ -1429,7 +1568,15 @@ const accountWrite = (
 /** Why v2 refused to save a connection's grant, as the user reads it, for an import and a check. */
 const grantRefusals = (write: Extract<AccountWrite, { kind: "grant" }>) =>
   Effect.catchTags({
-    OAuthSetupFailed: (error: OAuthSetupFailed) => fail(oauthSetupReason(error.reason)),
+    OAuthSetupFailed: (error: OAuthSetupFailed) =>
+      Effect.fail(
+        new ItemFailed({
+          reason: oauthSetupReason(error.reason),
+          ...(error.reason === "service_unavailable" || error.reason === "rate_limited"
+            ? { outage: true as const }
+            : {}),
+        }),
+      ),
     AuthMethodInvalid: () => fail("Its sign-in method is not in the imported app."),
     OAuthGrantNotImportable: (error: OAuthGrantNotImportable) =>
       write.firstParty === undefined
@@ -1499,6 +1646,98 @@ const saveAccount = (
     // Discovery ran outside a transaction; the account is recorded as soon as it exists.
     yield* record(imported("account", account.id));
     return account.id;
+  });
+
+/**
+ * The account of a connection an earlier run imported, given v1's tokens as they are now. An
+ * organization copied before it moved ran in both products, and both renewed the connection's
+ * grant; a service that rotates refresh tokens keeps only the last renewal's. Once the
+ * organization moves, v1 no longer renews, so its tokens are final, and the account takes them
+ * when its own grant needs reconnecting or v1 renewed after it did (`refreshImportedGrant`). A
+ * connection without an authorization-code grant, or whose tokens v1's Vault no longer holds, is
+ * left as it is.
+ */
+export const refreshCopiedGrant = (context: ItemContext, row: ConnectionRow, account: AccountId) =>
+  Effect.gen(function* () {
+    const plan = connectionPlan(context.snapshot, context.firstParty, row);
+    if (!plan.ok) return "kept" as const;
+    const { access } = plan.value;
+    const accessItem =
+      access.kind === "first_party" ||
+      (access.kind === "oauth" && access.grant === "authorization_code")
+        ? access.accessItem
+        : undefined;
+    if (accessItem === undefined || row.refresh_item_id === null) return "kept" as const;
+    const tokens = {
+      accessToken: yield* readSecret(context, row, accessItem),
+      refreshToken: yield* readSecret(context, row, row.refresh_item_id),
+      ...(row.expires_at === null ? {} : { expiresAt: row.expires_at }),
+    };
+    return yield* context.executor[OAuthGrantImport].refreshImportedGrant(account, tokens);
+  }).pipe(Effect.catchTag("ItemFailed", () => Effect.succeed("kept" as const)));
+
+/**
+ * Keep the account of a connection an earlier run imported fitting its app once the app is
+ * generated again. The app declares one provider for every sign-in method its connections use, so
+ * a connection v1 gained or lost since, or a new name, makes it another provider, which the saved
+ * account does not fit. The account moves to it, under the method its connection signs in with
+ * now, when that method is the one it was saved for (`moveImportedAccount`); otherwise it is left
+ * as it is. Returns whether it moved.
+ */
+export const followAppProvider = (
+  context: ItemContext,
+  row: ConnectionRow,
+  accounts: AppAccountRequirements,
+  account: AccountId,
+) =>
+  Effect.gen(function* () {
+    const requirement = accounts[connectionRequirement(row)];
+    const plan = connectionPlan(context.snapshot, context.firstParty, row);
+    if (requirement === undefined || !plan.ok) return false;
+    const planned = appMethods(
+      context.snapshot,
+      context.firstParty,
+      plan.value.integration,
+      yield* redundantFixed(context, plan.value.integration),
+    );
+    const method = planned.methodOf.get(row.row_id);
+    if (method === undefined) return false;
+    return yield* context.executor[OAuthGrantImport].moveImportedAccount({
+      account,
+      provider: requirement.provider,
+      method,
+    });
+  }).pipe(Effect.catchTag("ItemFailed", () => Effect.succeed(false)));
+
+/** The app an earlier run imported the connection's integration as, unless its users removed it. */
+const importedAppOf = (context: ItemContext, row: ConnectionRow) =>
+  Effect.gen(function* () {
+    const integration = context.snapshot.integrations.find(
+      (candidate) => candidate.slug === row.integration,
+    );
+    const found =
+      integration === undefined
+        ? undefined
+        : yield* context.store.find("integration", integration.row_id);
+    if (found?.status !== "imported" || found.v2_id === null) return undefined;
+    return yield* context.executor.apps
+      .get({ owner: organizationOwner(context.target.id), app: AppId.make(found.v2_id) })
+      .pipe(Effect.catchTag("AppNotFound", () => Effect.succeed(undefined)));
+  });
+
+/**
+ * Bring the account of a connection an earlier run imported up to date with v1 and its app: it
+ * takes v1's final tokens if they are newer (`refreshCopiedGrant`), and follows its app's provider
+ * (`followAppProvider`).
+ */
+export const updateCopiedAccount = (context: ItemContext, row: ConnectionRow, account: AccountId) =>
+  Effect.gen(function* () {
+    const tokens = yield* refreshCopiedGrant(context, row, account);
+    const app = yield* importedAppOf(context, row);
+    const followed =
+      app !== undefined &&
+      (yield* followAppProvider(context, row, app.requirements.accounts, account));
+    return { tokens, followed };
   });
 
 /**
@@ -1739,8 +1978,8 @@ export const toolkitPolicy = (
  * updates it.
  */
 export const toolkitConnectionId = (organization: string, toolkit: V1Toolkit, member: string) =>
-  sourceHash([organization, toolkit.row.row_id, member]).pipe(
-    Effect.map((hash) => ConnectionId.make(`v1-${hash.slice(0, 40)}`)),
+  toolkitCopyConnectionId(organization, toolkit.row.row_id, member).pipe(
+    Effect.map((id) => ConnectionId.make(id)),
   );
 
 /** The members who get a copy of a toolkit: everyone for an org toolkit, else its owner. */
@@ -1753,8 +1992,17 @@ export const toolkitMembers = (toolkit: V1Toolkit, members: readonly string[]) =
 export const toolkitCopyKey = (toolkit: Pick<V1Toolkit, "row">, member: string) =>
   toolkitCopyId(toolkit.row.row_id, member);
 
-/** Create or update a member's copy of the toolkit: a scoped MCP connection they own. */
-export const importToolkit = (context: ItemContext, toolkit: V1Toolkit, member: string) =>
+/**
+ * Create or update a member's copy of the toolkit: a scoped MCP connection they own. `copy` is the
+ * connection the import map already records for it, which for a copy the opt-in import made is not
+ * the id an import gives a copy now.
+ */
+export const importToolkit = (
+  context: ItemContext,
+  toolkit: V1Toolkit,
+  member: string,
+  copy?: string,
+) =>
   Effect.gen(function* () {
     const user = context.users.get(member);
     if (user === undefined) return yield* fail("Its member is not imported.");
@@ -1765,7 +2013,10 @@ export const importToolkit = (context: ItemContext, toolkit: V1Toolkit, member: 
       member,
     );
     const owner = { userId: user, resource: context.target.id };
-    const id = yield* toolkitConnectionId(context.target.id, toolkit, member);
+    const id =
+      copy === undefined
+        ? yield* toolkitConnectionId(context.target.id, toolkit, member)
+        : ConnectionId.make(copy);
     const name = (toolkit.data.name.trim() === "" ? toolkit.data.slug : toolkit.data.name).slice(
       0,
       80,

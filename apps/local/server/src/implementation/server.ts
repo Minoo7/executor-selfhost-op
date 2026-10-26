@@ -470,7 +470,7 @@ export const localApi = (
         layerBuildHeader,
         publishedSkillRoutes(Effect.succeed(publicSkills)),
         HttpApiBuilder.layer(LocalWebhookSetupApi).pipe(
-          Layer.provide(localWebhookSetupHandlers(executor, config, auth)),
+          Layer.provide(localWebhookSetupHandlers(executor, config, auth, wakeWebhookSources)),
         ),
         HttpApiBuilder.layer(DesktopReturnApi).pipe(Layer.provide(desktopReturns.handlers)),
         HttpRouter.add("*", "/api/webhooks/:appId/:subscriptionId", webhookCallback(executor)),
@@ -523,7 +523,6 @@ export const localApi = (
         HttpRouter.add("GET", "/app-auth", signIn.signIn(web.document)),
         HttpRouter.add("GET", "/apps/:app/setup", web.document),
         HttpRouter.add("GET", "/apps/:app/delete", web.document),
-        HttpRouter.add("GET", "/connect", web.document),
         HttpRouter.add("GET", "/connections", web.document),
         HttpRouter.add("GET", "/connections/:connection", web.document),
         HttpRouter.add("GET", "/approvals", web.document),

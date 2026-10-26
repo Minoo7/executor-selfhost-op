@@ -551,6 +551,16 @@ export const scenarios = plan({
       local: na("Hosted app version scenario"),
     },
   },
+  graphqlStatedErrors: {
+    fixtures: "actors",
+    file: "graphql-errors.spec.ts",
+    title: "GraphQL failures carry the errors the server stated, bounded and with secrets replaced",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Loopback GraphQL fixture"),
+      local: na("Hosted app version scenario"),
+    },
+  },
   mcpCatalogCache: {
     fixtures: "actors",
     file: "mcp-catalog.spec.ts",
@@ -1816,6 +1826,25 @@ export const scenarios = plan({
       "self-host": na("Local CLI background service"),
     },
   },
+  localServeStalledOutput: {
+    file: "local-serve-shutdown.spec.ts",
+    title: "serve stops promptly on SIGTERM while nothing reads its output",
+    targets: {
+      local: scheduled,
+      cloud: na("Local process shutdown"),
+      "self-host": na("Local process shutdown"),
+    },
+  },
+  localServeClosedOutput: {
+    file: "local-serve-shutdown.spec.ts",
+    title:
+      "the local server keeps serving after the reader of its stdout or stderr closes the pipe",
+    targets: {
+      local: scheduled,
+      cloud: na("Local process output"),
+      "self-host": na("Local process output"),
+    },
+  },
   localStartupObservability: {
     file: "local-startup-observability.spec.ts",
     title: "local startup failures retain their resource phase and safe system code",
@@ -2290,6 +2319,17 @@ export const scenarios = plan({
       local: na("Local runs schedules in its own server process."),
     },
   },
+  cloudScheduleCapacity: {
+    fixtures: "actors",
+    file: "cloud-schedule-capacity.spec.ts",
+    title:
+      "Cloud's schedule coordinator keeps nine slow scheduled runs in flight at once and starts another due schedule while they run",
+    targets: {
+      cloud: managedCloud,
+      "self-host": na("Self-host runs schedules in its own server process, with its own pool."),
+      local: na("Local runs schedules in its own server process, with its own pool."),
+    },
+  },
   cloudScheduleWakeStream: {
     fixtures: "actors",
     file: "cloud-schedule-wakes.spec.ts",
@@ -2404,7 +2444,7 @@ export const scenarios = plan({
     fixtures: "actors",
     file: "cloud-mcp-session-restore.spec.ts",
     title:
-      "Cloud MCP sessions continue after their session object is evicted, restored from its storage only for a bearer that names the object",
+      "Cloud MCP sessions continue after their session object is evicted, restored from its storage only for a bearer that names the object, a program waiting for approval keeps its object, and a later resume says only what the object recorded",
     targets: {
       cloud: managedCloud,
       "self-host": na(
@@ -3593,6 +3633,17 @@ export const scenarios = plan({
       local: na("Exercises the shared OAuth lifecycle through hosted APIs."),
     },
   },
+  oauthRenewalEndedGrantCodes: {
+    fixtures: "actors",
+    file: "oauth-refresh-resilience.spec.ts",
+    title:
+      "OAuth renewal refused with a service's own code for a dead refresh token, at any HTTP status, asks to reconnect, stops renewing, and traces the code",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Uses a scoped loopback issuer with controlled token endpoint failures."),
+      local: na("Exercises the shared OAuth lifecycle through hosted APIs."),
+    },
+  },
   oauthRenewalAheadOfExpiry: {
     fixtures: "actors",
     file: "oauth-refresh-resilience.spec.ts",
@@ -4380,7 +4431,18 @@ export const scenarios = plan({
     fixtures: "actors",
     file: "grouped-resources.spec.ts",
     title:
-      "workflow starts and webhook sources follow the caller's linked account, which a new link replaces, while unlinked history stays",
+      "workflow starts follow the caller's linked account, which a new link replaces, while unlinked history stays",
+    targets: {
+      "self-host": scheduled,
+      cloud: scheduled,
+      local: na("Local resource controls have a separate paired-browser scenario."),
+    },
+  },
+  groupedWebhookSources: {
+    fixtures: "actors",
+    file: "grouped-resources.spec.ts",
+    title:
+      "webhook sources follow the caller's linked account, each configured on its own, which a new link replaces and unlinking stops",
     targets: {
       "self-host": scheduled,
       cloud: scheduled,
@@ -4527,6 +4589,63 @@ export const scenarios = plan({
       "self-host": scheduled,
       cloud: na("Uses a scoped loopback OAuth issuer."),
       local: na("Exercises shared OAuth registration through the hosted API."),
+    },
+  },
+  oauthResourceRefused: {
+    fixtures: "actors",
+    file: "oauth-resource-indicator.spec.ts",
+    title:
+      "OAuth setup reports the resource indicator it will send, and a refused one fails sign-in naming that value and its source",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Uses a scoped loopback OAuth issuer."),
+      local: na("Exercises shared OAuth discovery and exchange through the hosted API."),
+    },
+  },
+  oauthResourceAudience: {
+    fixtures: "actors",
+    file: "oauth-resource-indicator.spec.ts",
+    title:
+      "A token issued for the metadata's resource and refused by the API is renewed with the same resource, and a declared resource fixes it",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Uses a scoped loopback OAuth issuer."),
+      local: na("Exercises shared OAuth discovery, exchange and renewal through the hosted API."),
+    },
+  },
+  oauthResourceOmitted: {
+    fixtures: "actors",
+    file: "oauth-resource-indicator.spec.ts",
+    title:
+      "OAuth setup and a refused sign-in say why no resource indicator was sent, and the app's settings can change it",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Uses scoped loopback OAuth issuers."),
+      local: na("Exercises shared OAuth discovery and exchange through the hosted API."),
+    },
+  },
+  oauthResourceOperator: {
+    fixtures: "actors",
+    file: "oauth-resource-indicator.spec.ts",
+    title:
+      "A refused resource indicator from the operator's OAuth client, or its absence, sends recovery to the instance administrator",
+    targets: {
+      "self-host": scheduled,
+      cloud: na(
+        "Restarts a runner-owned product with the operator's client; managed Cloud has no per-case operator settings.",
+      ),
+      local: na("Local products have no operator OAuth clients."),
+    },
+  },
+  oauthResourceTransient: {
+    fixtures: "actors",
+    file: "oauth-resource-indicator.spec.ts",
+    title:
+      "A rate-limited or unavailable token endpoint that answers invalid_target keeps its own failure and Retry-After",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Uses a scoped loopback OAuth issuer."),
+      local: na("Exercises shared OAuth exchange through the hosted API."),
     },
   },
   oauthAhrefs: {
@@ -6515,7 +6634,19 @@ export const scenarios = plan({
     fixtures: "actors",
     file: "app-management-contracts.spec.ts",
     title:
-      "hosted agents read the apps release, are refused create without files, deploy the documented two-file app, get commit and deploy results as objects, see the files a commit removed, are refused a file inside a file, and learn the tool-only app has no UI",
+      "hosted agents read the apps release, are refused create without files, deploy the documented two-file app, get commit and deploy results as objects, and learn the tool-only app has no UI",
+    managementApps: ["owner"],
+    targets: {
+      "self-host": scheduled,
+      cloud: sourceStorageCloud,
+      local: na("Local runs the same agent programs in its own scenario."),
+    },
+  },
+  appManagementSavesHosted: {
+    fixtures: "actors",
+    file: "app-management-contracts.spec.ts",
+    title:
+      "hosted agents see the files a save removed and restore them, are refused a file inside a file or a path that is not Unicode, and get bounded lists of many removed files",
     managementApps: ["owner"],
     targets: {
       "self-host": scheduled,
@@ -6658,6 +6789,32 @@ export const scenarios = plan({
       local: na("Hosted account selection covers the shared catalog diagnostics."),
     },
   },
+  mcpFailureReference: {
+    fixtures: "actors",
+    file: "mcp-failure-reference.spec.ts",
+    title:
+      "MCP failures name their cause, the phase they stopped and the request's trace on search, call and execute",
+    targets: {
+      "self-host": scheduled,
+      cloud: na(
+        "The failing MCP server is a loopback listener; the shared MCP diagnostics are covered on self-host.",
+      ),
+      local: na("Hosted self-host covers the shared MCP diagnostics."),
+    },
+  },
+  mcpFailureReferenceMatchedLimit: {
+    fixtures: "actors",
+    file: "mcp-failure-reference.spec.ts",
+    title:
+      "MCP failures call a runtime limit matched from an app Worker's own error a cause Executor has not confirmed",
+    targets: {
+      "self-host": na(
+        "The scenario above asserts the same unconfirmed match for the forged rejection on self-host.",
+      ),
+      cloud: managedCloud,
+      local: na("Hosted Cloud covers the shared runtime presentation."),
+    },
+  },
   mcpExecuteAppThrew: {
     fixtures: "actors",
     file: "mcp-execute-failures.spec.ts",
@@ -6772,6 +6929,16 @@ export const scenarios = plan({
       "self-host": scheduled,
       cloud: na("The silent MCP server is a loopback listener."),
       local: na("Hosted self-host covers the shared app runtime error mapping."),
+    },
+  },
+  mcpExecuteToolReportedError: {
+    fixtures: "actors",
+    file: "mcp-execute-failures.spec.ts",
+    title: "MCP tool results that say the tool failed are listed as failed calls",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("The reporting MCP server is a loopback listener."),
+      local: na("Hosted self-host covers the shared execute path."),
     },
   },
   mcpExecutePendingWriteRefused: {
@@ -7112,6 +7279,18 @@ export const scenarios = plan({
     file: "webhook-source-retry-backoff.spec.ts",
     title:
       "a webhook source whose account must reconnect checks it again after twice as long each time it still waits, and reconnecting the account resumes it at once",
+    targets: {
+      local: na("Hosted link and webhook source routes."),
+      "self-host": scheduled,
+      cloud: na("Advances the wall clock and reads stored rows of a runner-owned product process."),
+    },
+  },
+  webhookSourceSetupWait: {
+    fixtures: "actors",
+    legacyStorage: true,
+    file: "webhook-source-retry-backoff.spec.ts",
+    title:
+      "a webhook source waiting for its manual setup tries again after twice as long each time it still waits, and completing the setup runs it at once",
     targets: {
       local: na("Hosted link and webhook source routes."),
       "self-host": scheduled,
@@ -7519,6 +7698,139 @@ export const scenarios = plan({
       cloud: scheduled,
     },
   },
+  hostedAccountWebhookDependencies: {
+    fixtures: "actors",
+    file: "account-webhook-dependencies.spec.ts",
+    title:
+      "deleting an account a live webhook registration ran with is refused naming that subscription, over REST and through the Executor app, while a disabled registration holds only its source account",
+    targets: {
+      local: na("Local has no organization members to depart."),
+      "self-host": scheduled,
+      cloud: scheduled,
+    },
+  },
+  hostedAccountWebhookHiddenDependents: {
+    fixtures: "actors",
+    file: "account-webhook-dependencies.spec.ts",
+    title:
+      "a member deleting their account refused for webhook subscriptions they can't see is told how many, never which apps or subscriptions, and can delete it once those are removed",
+    targets: {
+      local: na("Local has one user, who sees every app and subscription."),
+      "self-host": scheduled,
+      cloud: scheduled,
+    },
+  },
+  hostedManualWebhookAcrossDeploys: {
+    fixtures: "actors",
+    file: "app-account-webhooks.spec.ts",
+    title:
+      "a manual app-account webhook keeps its subscription, callback URL and secret across deploys that keep its setup, a deploy that changes the setup replaces it, and a caller's create is refused as app-managed",
+    targets: {
+      local: na("Hosted managers and app links; Local has no organization roles."),
+      "self-host": scheduled,
+      cloud: scheduled,
+    },
+  },
+  hostedManualWebhookRollback: {
+    fixtures: "actors",
+    file: "app-account-webhooks.spec.ts",
+    title:
+      "activating an earlier version moves a carried manual webhook back to it, so its deliveries run the active code, and activating the later version moves it forward again",
+    targets: {
+      local: na("Hosted managers and app links; Local has no organization roles."),
+      "self-host": scheduled,
+      cloud: scheduled,
+    },
+  },
+  hostedManualWebhookStateSchema: {
+    fixtures: "actors",
+    file: "app-account-webhooks.spec.ts",
+    title:
+      "a manual webhook keeps its setup when a deploy reorders its state fields, and a deploy that changes what they accept replaces it in either direction",
+    targets: {
+      local: na("Hosted managers and app links; Local has no organization roles."),
+      "self-host": scheduled,
+      cloud: scheduled,
+    },
+  },
+  hostedManualWebhookStateReference: {
+    fixtures: "actors",
+    file: "app-account-webhooks.spec.ts",
+    title:
+      "a deploy that reorders the anyOf branches a manual webhook's state schema references by position replaces its setup",
+    targets: {
+      local: na("Hosted managers and app links; Local has no organization roles."),
+      "self-host": scheduled,
+      cloud: scheduled,
+    },
+  },
+  hostedManualWebhookNestedRequired: {
+    fixtures: "actors",
+    file: "app-account-webhooks.spec.ts",
+    title:
+      "a manual webhook keeps its setup when a deploy reorders a list of field names nested anywhere in its state schema, such as a Draft 7 dependency's required fields",
+    targets: {
+      local: na("Hosted managers and app links; Local has no organization roles."),
+      "self-host": scheduled,
+      cloud: scheduled,
+    },
+  },
+  hostedManualWebhookDeepStateSchema: {
+    fixtures: "actors",
+    file: "app-account-webhooks.spec.ts",
+    title:
+      "a manual webhook keeps its setup across a deploy when its state schema nests 64 levels deep, and a deploy of an unchanged schema 65 or more levels deep replaces it instead of leaving its source pending",
+    targets: {
+      local: na("Hosted managers and app links; Local has no organization roles."),
+      "self-host": scheduled,
+      cloud: scheduled,
+    },
+  },
+  hostedManualWebhookDeepConfiguration: {
+    fixtures: "actors",
+    file: "app-account-webhooks.spec.ts",
+    title:
+      "a manual webhook keeps its setup across a deploy when its configuration nests 64 levels deep, and a deploy of an unchanged configuration 65 or more levels deep replaces it instead of leaving its source pending",
+    targets: {
+      local: na("Hosted managers and app links; Local has no organization roles."),
+      "self-host": scheduled,
+      cloud: scheduled,
+    },
+  },
+  hostedManualWebhookWideSetup: {
+    fixtures: "actors",
+    file: "app-account-webhooks.spec.ts",
+    title:
+      "a manual webhook keeps its setup across a deploy when the setup it compares is as long as the comparison allows, and a deploy of an unchanged setup one character longer replaces it",
+    targets: {
+      local: na("Hosted managers and app links; Local has no organization roles."),
+      "self-host": scheduled,
+      cloud: scheduled,
+    },
+  },
+  hostedManualWebhookNestedWideSetup: {
+    fixtures: "actors",
+    file: "app-account-webhooks.spec.ts",
+    title:
+      "a deploy of an unchanged manual webhook setup whose configuration nests wide lists in each other, each fitting the comparison alone, replaces it",
+    targets: {
+      local: na("Hosted managers and app links; Local has no organization roles."),
+      "self-host": scheduled,
+      cloud: scheduled,
+    },
+  },
+  hostedManualWebhookConcurrentActivations: {
+    fixtures: "actors",
+    file: "app-account-webhooks.spec.ts",
+    title:
+      "a webhook source reconciling for an activation that another supersedes, also one back to the same version, is ready only once its manual and registered webhooks run the active version",
+    targets: {
+      local: na("Hosted managers and app links; Local has no organization roles."),
+      "self-host": scheduled,
+      // Deployed Cloud refuses the loopback provider fixture; the local Cloud Worker reaches it.
+      cloud: managedCloud,
+    },
+  },
   hostedAppSchedules: {
     fixtures: "actors",
     file: "app-schedules.spec.ts",
@@ -7688,6 +8000,39 @@ export const scenarios = plan({
       "self-host": scheduled,
       cloud: scheduled,
       local: na("This scenario uses hosted memberships, API keys and MCP."),
+    },
+  },
+  workflowControls: {
+    fixtures: "actors",
+    file: "workflow-controls.spec.ts",
+    title:
+      "in-app workflow controls answer apps built before the version rename and refuse an over-long key before starting a run",
+    targets: {
+      "self-host": scheduled,
+      cloud: scheduled,
+      local: na("This scenario uses hosted app management routes."),
+    },
+  },
+  workflowStartReadBack: {
+    fixtures: "actors",
+    file: "workflow-controls.spec.ts",
+    title:
+      "an in-app workflow start whose saved run cannot be read back names the run, is not retryable, and starting again as advised makes no second run",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("The storage fault is mounted by the self-host test entry point."),
+      local: na("This scenario uses hosted app management routes."),
+    },
+  },
+  workflowStartCommit: {
+    fixtures: "actors",
+    file: "workflow-controls.spec.ts",
+    title:
+      "an in-app workflow start whose commit is refused, times out or loses its answer says the run may exist without offering a retry, and answers with the run once it reads it back",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("The storage fault is mounted by the self-host test entry point."),
+      local: na("This scenario uses hosted app management routes."),
     },
   },
   workflowStarts: {
@@ -7972,6 +8317,31 @@ export const scenarios = plan({
       ),
     },
   },
+  idlePollTraces: {
+    file: "idle-poll-traces.spec.ts",
+    title:
+      "An idle server's checks for due runs, queued jobs and event deliveries export no traces",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Cloud dispatches on alarms and requests, not by polling."),
+      local: na(
+        "Local runs the same scheduler and event loops; only self-host starts a scenario-owned server.",
+      ),
+    },
+  },
+  failedPollTraces: {
+    legacyStorage: true,
+    file: "idle-poll-traces.spec.ts",
+    title:
+      "A failing check for due runs, queued jobs or event deliveries exports which statement failed",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Cloud dispatches on alarms and requests, not by polling."),
+      local: na(
+        "Local runs the same scheduler and event loops; only self-host starts a scenario-owned server.",
+      ),
+    },
+  },
   telemetryBackpressure: {
     file: "telemetry-backpressure.spec.ts",
     title:
@@ -8020,6 +8390,12 @@ export const scenarios = plan({
     title: "Cloud onboarding with Google opens prepared team confirmation",
     targets: cloudOnboarding,
   },
+  onboardingAssistant: {
+    file: "cloud-onboarding.spec.ts",
+    title:
+      "Cloud onboarding's assistant step notices any MCP client, and Claude's guide calls connected only an assistant that connects over MCP after it opens",
+    targets: cloudOnboarding,
+  },
   onboardingGithub: {
     file: "cloud-onboarding.spec.ts",
     title: "Cloud onboarding with GitHub retains edited team details through a failed confirmation",
@@ -8055,6 +8431,23 @@ export const scenarios = plan({
     file: "cloud-onboarding-experiment.spec.ts",
     title:
       "Cloud onboarding experiment serves accounts first without an exposure when its flag is unavailable",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  onboardingRequiredAccountsFirst: {
+    file: "cloud-onboarding-skip-experiment.spec.ts",
+    title:
+      "Cloud onboarding skip experiment required keeps accounts_first setup until both steps are done",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  onboardingRequiredAssistantFirst: {
+    file: "cloud-onboarding-skip-experiment.spec.ts",
+    title:
+      "Cloud onboarding skip experiment required keeps assistant_first setup until both steps are done",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  onboardingSkippable: {
+    file: "cloud-onboarding-skip-experiment.spec.ts",
+    title: "Cloud onboarding skip experiment skippable still skips both steps to the dashboard",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
   // The v1 check reads the emulated v1 database only a managed local Cloud has, and its
@@ -8111,6 +8504,12 @@ export const scenarios = plan({
       "Cloud v1 import keeps a workspace that fails verification frozen in v1, and accepts MCP requests v1 forwards for an imported workspace, with a new signed bearer for each request of a session, scopes a toolkit's bearer to the caller's own copy, and refuses a wrong signature, an expired or too long-lived bearer, an account, organization or toolkit copy the import never mapped, and a toolkit claim without its connection",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
+  v1ImportOptInToolkits: {
+    file: "cloud-v1-import.spec.ts",
+    title:
+      "Cloud v1 import moves an organization into the toolkit copies the opt-in import keyed by the toolkit alone, updating the copy its member kept and keeping the one they changed in v2 without making either a second copy, and runs v1's forwarded toolkit requests under those copies",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
   v1HandoffSignIn: {
     file: "cloud-v1-session-handoff.spec.ts",
     title:
@@ -8129,10 +8528,40 @@ export const scenarios = plan({
       "Cloud v1 import makes toolkits over the workspace's and a member's connections callable through their v1 URLs, running the org toolkit's copy as the app the workspace's account is linked to and the personal toolkit's as the member's account",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
+  v1ImportStampedApprovals: {
+    file: "cloud-v1-import.spec.ts",
+    title:
+      "Cloud v1 import keeps asking before an MCP tool v1 stamped as needing approval after its server drops the destructive hint, and leaves the tools v1 allowed without a rule of their own",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  v1ImportUnlistedRules: {
+    file: "cloud-v1-import.spec.ts",
+    title:
+      "Cloud v1 import decides the tools v1 never listed by v1's rules: an MCP tool a rule blocks by name is left out, one no rule names asks as v1's catch-all rule says, an OpenAPI operation v1 compiled asks as its rule says, and the repair finds the import's own apps unchanged",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  v1ImportRepair: {
+    file: "cloud-v1-import.spec.ts",
+    title:
+      "Cloud v1 import repairs an MCP app moved before v1's approval stamps became rules: it plans without writing, deploys the earlier importer's app with the stamp as its own rule, gives an app an earlier import deployed the importer's source now, leaves an app whose users turned its approvals off or dropped them in v2 as they chose, keeps the code of an app its users changed beside its approvals and adds v1's approvals beneath it, finds nothing left on a second run, and runs the version a repair replaced again only while the app still runs the repair's",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
   v1ImportRollback: {
     file: "cloud-v1-import-run.spec.ts",
     title:
       "Cloud v1 import marks a verified workspace moved in v1 and gives it back on rollback only once its v2 organization is deleted, clearing its import map but its users",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  v1ImportPaidBilling: {
+    file: "cloud-v1-import-run.spec.ts",
+    title:
+      "Cloud v1 import carries a paid v1 Team subscription over to v2's Team plan on the same Stripe subscription with its renewal: per member with its seats and a cancellation at the end of its period, a flat price kept with unlimited members, and a grandfathered Hobby organization moved to v2's Free plan with its v1 customer untouched",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  v1ImportBillingReturn: {
+    file: "cloud-v1-import-run.spec.ts",
+    title:
+      "Cloud v1 import keeps a paid workspace whose subscription did not carry over frozen with its billing held, offering no v2 billing or checkout, gives the subscription back to v1 on the same Stripe subscription with its seats, past a free customer v1 made meanwhile, and then deleting the v2 organization cancels nothing and the workspace rolls back",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
   v1ImportRequests: {
@@ -8145,6 +8574,12 @@ export const scenarios = plan({
     file: "cloud-v1-import.spec.ts",
     title:
       "Cloud v1 import signs in and renews OAuth accounts with each connection's v1 client, granted scopes and resource, not the integration's method, refuses a token endpoint v1 no longer trusted, sends an OAuth integration's fixed credentials from a second account linked for everyone, and leaves out fixed headers that repeat the connection's own client ID and secret",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  v1ImportCopiedMove: {
+    file: "cloud-v1-import.spec.ts",
+    title:
+      "Cloud v1 import moves an organization already copied to v2 into that copy: its dry run reports the copy's slug, an account v1 renewed later takes v1's newer tokens while one v2 renewed keeps its own, both keep fitting their app after v1 renamed its integration, and an app its members deployed in v2 since keeps their version, while what they removed in v2 stays removed, also when v1 removed it too, and a teammate they added stays",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
   // The operator clients it moves grants to are the ones every managed local Cloud starts with.
@@ -8170,6 +8605,12 @@ export const scenarios = plan({
     file: "cloud-v1-import-run.spec.ts",
     title:
       "Cloud v1 import moves a shared workspace on the server and cuts it over once it verifies: the oldest admin owns it, members keep their roles without a welcome email, org connections become shared accounts linked for everyone and members' their own, a member's approve rule is dropped while their block applies to everyone, every member gets their own copy of an org toolkit, and a former member's rows stay behind",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  v1ImportSlugDisplacement: {
+    file: "cloud-v1-import-run.spec.ts",
+    title:
+      "Cloud v1 import gives a v1 workspace the slug a v2 team holds only when the operator listed that team in its allow table row: the dry run plans the team's new slug and writes nothing, the import renames the team and creates the workspace at the slug in one transaction, the team's member keeps it and its apps at the new slug while the old slug names the workspace, a listed team that does not hold the slug is reported and left alone, and an unlisted holder keeps its slug while the workspace takes a suffix",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
   v1ImportAllowed: {
@@ -8288,6 +8729,16 @@ export const scenarios = plan({
     file: "local-apps-cli.spec.ts",
     title:
       "apps CLI reports the host's error code, status and fields as text and JSON, says when the CLI is out of date, refuses source over the limits or not UTF-8 before uploading, and reads EXECUTOR_HOST",
+    targets: {
+      local: scheduled,
+      "self-host": na("The CLI's hosted path needs a browser OAuth login; local uses an API key."),
+      cloud: na("The CLI's hosted path needs a browser OAuth login; local uses an API key."),
+    },
+  },
+  localAppsCliPipedOutput: {
+    file: "local-apps-cli.spec.ts",
+    title:
+      "apps CLI prints source larger than a pipe holds in full to a slow reader, and stops quietly for one that closes early",
     targets: {
       local: scheduled,
       "self-host": na("The CLI's hosted path needs a browser OAuth login; local uses an API key."),
