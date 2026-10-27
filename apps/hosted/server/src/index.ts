@@ -8,11 +8,14 @@ export { HostedCatalog } from "./contracts/catalog.ts";
 export { hostedHandlers } from "./implementation/api.ts";
 export { catalogLive } from "./implementation/catalog.ts";
 export {
+  hostedApi,
   hostedApiDocumentRoute,
+  hostedApiRevision,
   lazyHostedApiDocument,
   type LazyHostedApiDocument,
 } from "./implementation/api-document.ts";
 export {
+  callerSpanAttributes,
   CurrentUserId,
   ApiAuthentication,
   Authentication,
