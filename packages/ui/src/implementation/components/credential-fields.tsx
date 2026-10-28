@@ -1,8 +1,7 @@
 import type { AccountFormFields } from "../../contracts/credentials.ts";
-import { useId, useState } from "react";
 import { Input } from "@executor-js/ui/components/input";
 import { Button } from "./button.tsx";
-import { useRef, type ClipboardEvent, type DragEvent } from "react";
+import { useId, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { flushSync } from "react-dom";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { SquareLock02Icon, ViewIcon } from "@hugeicons/core-free-icons";
