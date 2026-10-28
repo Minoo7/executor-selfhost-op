@@ -21,7 +21,12 @@ import { AppId, CredentialsError, NotImplemented, StorageError } from "../contra
 import { makeWebhooks } from "./webhooks.ts";
 import { makeAppData } from "./app-storage.ts";
 import { makeAccountConnections } from "./account-connections.ts";
-import { makeAccounts, storedAccount } from "./accounts.ts";
+import {
+  credentialsReadable,
+  makeAccounts,
+  moveImportedAccount,
+  storedAccount,
+} from "./accounts.ts";
 import { makeSavedOAuthClients } from "./saved-oauth-clients.ts";
 import { makeOwnerMoves } from "./owner-moves.ts";
 import { SavedOAuthClientsHost } from "../contracts/oauth-clients.ts";
@@ -33,6 +38,7 @@ import { makeSchedules } from "./schedules.ts";
 import { makeTools } from "./tools.ts";
 import { makeSkills } from "./skills.ts";
 import { toEffectRuntime } from "./runtime.ts";
+import { validateFields } from "./provider.ts";
 import { database } from "./database.ts";
 import { makeOAuth } from "./oauth.ts";
 import { makeDeclarationCache, makeDeclarations } from "./declarations.ts";
@@ -101,9 +107,10 @@ export const createExecutor = (
       durable: options.cache?.durable,
       background: options.background,
       resolveAccount: oauth.resolveSelected,
-      accountUsable: oauth.usable,
+      accountsUsable: oauth.usableAll,
       crypto,
       lifecycle: options.hooks,
+      hostApi: options.hostApi,
     });
     const workflows = makeWorkflowRuns(
       options.database,
@@ -172,6 +179,7 @@ export const createExecutor = (
       oauth,
       firstPartyClients,
       apps.list,
+      options.hostApi,
     );
     const schedules = makeSchedules(
       options.database,
@@ -186,11 +194,12 @@ export const createExecutor = (
       liveDefinitions: webhooks.liveDefinitions,
       retarget: webhooks.retarget,
       createManaged: webhooks.createManaged,
+      removeManaged: webhooks.removeManaged,
       accountNeedingReconnect: tools.accountNeedingReconnect,
     });
     // App source defines schedules. Each activation removes saved settings for schedules the new
-    // deployment no longer declares and retimes those whose timing changed. The activation has
-    // committed, so a deployment that cannot be evaluated keeps them and the activation still
+    // version no longer declares and retimes those whose timing changed. The activation has
+    // committed, so a version that cannot be evaluated keeps them and the activation still
     // succeeds. Webhook sources reconcile in the
     // background.
     const activated = (app: AppId) =>
@@ -199,7 +208,7 @@ export const createExecutor = (
         .pipe(
           Effect.catch((error) =>
             Effect.logWarning(
-              "Kept saved schedules: the activated deployment was not evaluated",
+              "Kept saved schedules: the activated version was not evaluated",
               error,
             ),
           ),
@@ -222,7 +231,17 @@ export const createExecutor = (
       },
       [OAuthGrantImport]: {
         importOAuthGrant: oauth.importGrant,
+        checkOAuthGrant: oauth.checkGrant,
+        checkAccountFields: (input) =>
+          validateFields(input.provider, input.definition, input.method, input.fields).pipe(
+            Effect.asVoid,
+          ),
         firstPartyClient: oauth.firstPartyClient,
+        credentialsReadable: credentialsReadable(db, credentials),
+        moveImportedAccount: moveImportedAccount(db),
+        refreshImportedGrant: oauth.refreshImportedGrant,
+        // The same removal without the provider-side revocation `accountOperations` makes.
+        removeImportedAccount: makeAccounts(db, credentials, crypto, options.hooks).remove,
       },
       [StorageHost]: {
         transaction: (effect) =>
@@ -268,8 +287,8 @@ export const createExecutor = (
           apps
             .deploy(input)
             .pipe(
-              Effect.tap(({ app, deployment }) =>
-                app.activeDeployment === deployment.id ? activated(app.id) : Effect.void,
+              Effect.tap(({ app, version }) =>
+                app.activeVersion === version.id ? activated(app.id) : Effect.void,
               ),
             ),
         activate: (input) => apps.activate(input).pipe(Effect.tap((app) => activated(app.id))),
@@ -287,7 +306,13 @@ export const createExecutor = (
         unlink: webhookSources.unlink,
       },
       webhookSetup: webhooks.webhookSetup,
-      appData: makeAppData(options.database, oauth.resolveSelected, runtime, workflows.controls),
+      appData: makeAppData(
+        options.database,
+        oauth.resolveSelected,
+        runtime,
+        options.hostApi,
+        workflows.controls,
+      ),
       tools: { ...tools, search: search.page },
     };
   });

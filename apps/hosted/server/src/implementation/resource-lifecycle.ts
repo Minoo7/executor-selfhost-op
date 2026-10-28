@@ -31,6 +31,7 @@ import { usableAppLinks } from "./resource-policy.ts";
 
 type AppCreation =
   | { readonly kind: "member" }
+  | { readonly kind: "shared" }
   | { readonly kind: "system" }
   | { readonly kind: "copy"; readonly from: AppId };
 const AppCreation = Context.Reference<AppCreation>("hosted/AppCreation", {
@@ -53,6 +54,12 @@ export const copiedAppCreation =
 /** Only the explicit system installer may create an unattributed organization app. */
 export const organizationAppCreation = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.provideService(AppCreation, { kind: "system" }));
+/**
+ * An app a member creates for everyone in the organization: the member is its creator and its
+ * audience is everyone, such as an integration the v1 import moves for the organization's owner.
+ */
+export const sharedAppCreation = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(Effect.provideService(AppCreation, { kind: "shared" }));
 /** Connection completion uses the persisted destination, not callback query parameters. */
 export const accountDestination =
   (destination: typeof ConnectionDestination.Type) =>
@@ -368,7 +375,7 @@ export const hostedResourceLifecycle = Effect.gen(function* () {
           // The SDK supplies the connection's reconnect target and the app requirement it links
           // to, so the product checks its own access rows only. Whether the requirement's scope
           // lets this member complete it is checked by `appAccountConnected`, under the app's
-          // lock, against the deployment the SDK completes against. A member who lost the access
+          // lock, against the version the SDK completes against. A member who lost the access
           // the connection needs, such as management of the account it reconnects, is refused.
           const refused = new AccountConnectionRefused(connection.target);
           const reconnect = connection.reconnectAccount;
@@ -424,7 +431,7 @@ export const hostedResourceLifecycle = Effect.gen(function* () {
           const user = yield* CurrentUserId;
           const creator = intent.kind === "system" ? null : yield* member(organization, user);
           yield* sql`insert into hosted_app_access (id, organization_id, creator_id, audience)
-        values (${app.id}, ${organization}, ${creator}, ${intent.kind === "system" ? "everyone" : "private"})`;
+        values (${app.id}, ${organization}, ${creator}, ${intent.kind === "member" ? "private" : "everyone"})`;
         }).pipe(Effect.catchTag("SqlError", () => new StorageError())),
       accountCreated: (account) =>
         Effect.gen(function* () {
@@ -575,8 +582,8 @@ export const hostedResourceLifecycle = Effect.gen(function* () {
         ),
       // An account connected for a user requirement is linked for its connecting member; one for
       // an app requirement is linked for everyone. This runs under the app's lock, with the scope the
-      // active deployment gives the requirement now; `connectionCompleting` ran before the lock,
-      // so a deployment activated since may have changed it. The connection must have been
+      // active version gives the requirement now; `connectionCompleting` ran before the lock,
+      // so a version activated since may have changed it. The connection must have been
       // started for this scope, or its target changed; and by its completing member, who for a
       // user requirement may use the app, and for an app requirement manages the app and may use
       // the account, now that the account's access record exists. Otherwise the member is refused.

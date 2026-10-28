@@ -10,11 +10,12 @@ import { Evidence } from "../support/evidence.ts";
 import { appsManifest } from "../support/apps-release.ts";
 import { connectAccountsThroughOtherApp } from "../support/app-accounts.ts";
 import { wholeStringInputPattern } from "../support/mcp-input-patterns.ts";
+import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker";
 
 const App = Schema.Struct({
   id: Schema.String,
   slug: Schema.String,
-  activeDeployment: Schema.String,
+  activeVersion: Schema.String,
 });
 const Published = Schema.Struct({ app: App });
 const Index = Schema.Struct({
@@ -22,16 +23,37 @@ const Index = Schema.Struct({
     Schema.Struct({
       name: Schema.String,
       app: Schema.Struct({ id: Schema.String, slug: Schema.String }),
-      deployment: Schema.String,
+      version: Schema.String,
       revision: Schema.String,
     }),
   ),
 });
 const Document = Schema.Struct({
   content: Schema.String,
-  deployment: Schema.String,
+  version: Schema.String,
   files: Schema.Array(Schema.String),
 });
+const Listed = Schema.Struct({
+  tools: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      description: Schema.optional(Schema.String),
+      inputSchema: Schema.Record(Schema.String, Schema.Unknown),
+    }),
+  ),
+});
+const SkillsInput = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown));
+/**
+ * The `skills` inputs a text shows. The `skills` description shows them as bare objects; every
+ * other text shows a concrete call as `skills({...})`. Keys may be unquoted and strings may use
+ * single quotes, as in the descriptions.
+ */
+const skillsExamples = (text: string, bare: boolean) =>
+  [...text.matchAll(bare ? /\{[^{}]*\}/g : /skills\((\{[^{}]*\})\)/g)].map((match) =>
+    (match[1] ?? match[0])
+      .replaceAll("'", '"')
+      .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":'),
+  );
 const files = (version: string) => [
   {
     path: "index.ts",
@@ -74,7 +96,7 @@ layer(TestLive, { excludeTestServices: true })("Local skills", (it) => {
         );
         expect(copyResponse.status).toBe(200);
         const copy = yield* body(App, copyResponse);
-        expect(copy.activeDeployment).not.toBe(app.activeDeployment);
+        expect(copy.activeVersion).not.toBe(app.activeVersion);
         yield* Effect.addFinalizer(() =>
           session.send("DELETE", `/v1/apps/${copy.id}`, undefined, headers).pipe(Effect.orDie),
         );
@@ -116,14 +138,14 @@ layer(TestLive, { excludeTestServices: true })("Local skills", (it) => {
         const listed = yield* client.use("Discover the skills input schema", (client) =>
           client.listTools(),
         );
-        expect(guide.deployment).toMatch(
-          yield* wholeStringInputPattern(listed.tools, "skills", "deployment"),
+        expect(guide.version).toMatch(
+          yield* wholeStringInputPattern(listed.tools, "skills", "version"),
         );
         expect(guide.revision).toMatch(
           yield* wholeStringInputPattern(listed.tools, "skills", "revision"),
         );
         const selected = yield* client.use(
-          "Read the guide with its returned deployment and revision",
+          "Read the guide with its returned version and revision",
           (client, signal) =>
             client.callTool(
               {
@@ -131,7 +153,7 @@ layer(TestLive, { excludeTestServices: true })("Local skills", (it) => {
                 arguments: {
                   app: guide.app.slug,
                   name: guide.name,
-                  deployment: guide.deployment,
+                  version: guide.version,
                   revision: guide.revision,
                 },
               },
@@ -140,8 +162,8 @@ layer(TestLive, { excludeTestServices: true })("Local skills", (it) => {
             ),
         );
         expect(
-          (yield* Schema.decodeUnknownEffect(Document)(selected.structuredContent)).deployment,
-        ).toBe(guide.deployment);
+          (yield* Schema.decodeUnknownEffect(Document)(selected.structuredContent)).version,
+        ).toBe(guide.version);
         const read = yield* client.use(
           "Read the app-owned app-authoring document",
           (client, signal) =>
@@ -174,7 +196,7 @@ layer(TestLive, { excludeTestServices: true })("Local skills", (it) => {
               arguments: {
                 app: guide.app.slug,
                 name: "app-authoring",
-                deployment: guideDocument.deployment,
+                version: guideDocument.version,
                 file: "ui.md",
               },
             },
@@ -185,6 +207,33 @@ layer(TestLive, { excludeTestServices: true })("Local skills", (it) => {
         expect(
           (yield* Schema.decodeUnknownEffect(Document)(topic.structuredContent)).content,
         ).toContain("withOptimisticUpdate");
+        // Every file the guide links is listed and readable, including the nested upgrade guides.
+        const linked = [...guideDocument.content.matchAll(/\]\(([^)\s#:]+\.md)\)/g)].map(
+          (match) => match[1] ?? "",
+        );
+        expect(linked).toEqual(expect.arrayContaining(["upgrades/0.0.1-beta.90.md"]));
+        expect(guideDocument.files).toEqual(expect.arrayContaining(linked));
+        for (const file of new Set(linked)) {
+          const read = yield* client.use(`Read the linked ${file} on local`, (client, signal) =>
+            client.callTool(
+              {
+                name: "skills",
+                arguments: {
+                  app: guide.app.slug,
+                  name: "app-authoring",
+                  version: guideDocument.version,
+                  file,
+                },
+              },
+              undefined,
+              { signal },
+            ),
+          );
+          expect(read.isError, JSON.stringify(read.content)).not.toBe(true);
+          expect(
+            (yield* Schema.decodeUnknownEffect(Document)(read.structuredContent)).content,
+          ).not.toBe("");
+        }
         // The Executor app appears once, at its slug, with its linked local key.
         const referenceTools = "tools.executor";
         const accountTools = yield* client.use(
@@ -315,7 +364,7 @@ return { sameAccount: target.account === read.id && read.id === updated.id, labe
           }),
           yield* session.send("GET", `/v1/apps/${guide.app.id}/source`, undefined, headers),
         );
-        expect(source.id).toBe(guideDocument.deployment);
+        expect(source.id).toBe(guideDocument.version);
         expect(source.files.some((file) => file.path.startsWith("skills/"))).toBe(false);
         expect(source.files.find((file) => file.path === "index.ts")?.content).toContain(
           "wellKnownSkills",
@@ -345,7 +394,7 @@ return { sameAccount: target.account === read.id && read.id === updated.id, labe
           (yield* Schema.decodeUnknownEffect(Document)(current.structuredContent)).content,
         ).toContain("Version two.");
         const pinned = yield* client.use(
-          "Follow a reference using the original deployment",
+          "Follow a reference using the original version",
           (client, signal) =>
             client.callTool(
               {
@@ -354,7 +403,7 @@ return { sameAccount: target.account === read.id && read.id === updated.id, labe
                   app: app.slug,
                   name: "app-authoring",
                   file: "references/example.md",
-                  deployment: original.deployment,
+                  version: original.version,
                 },
               },
               undefined,
@@ -376,13 +425,13 @@ return { sameAccount: target.account === read.id && read.id === updated.id, labe
         const copiedDocument = yield* Schema.decodeUnknownEffect(Document)(
           copyRead.structuredContent,
         );
-        expect(copiedDocument.deployment).toBe(copy.activeDeployment);
+        expect(copiedDocument.version).toBe(copy.activeVersion);
         expect(copiedDocument.content).toContain("Version one.");
         // Every document needs an app. There is no unscoped authoring-guide fallback.
         for (const input of [
           { file: "SKILL.md" },
           { name: "app-authoring" },
-          { name: "app-authoring", deployment: original.deployment },
+          { name: "app-authoring", version: original.version },
           { app: app.slug, file: "SKILL.md" },
           { app: app.slug, name: "app-authoring", file: "../index.ts" },
         ]) {
@@ -390,6 +439,146 @@ return { sameAccount: target.account === read.id && read.id === updated.id, labe
             client.callTool({ name: "skills", arguments: input }, undefined, { signal }),
           );
           expect(invalid.isError).toBe(true);
+        }
+      }).pipe(Effect.provide(McpClient.layer)),
+    ),
+  );
+  it.effect(scenarios.localSkillsInputSchema.title, (context) =>
+    withCase(
+      context,
+      Effect.gen(function* () {
+        const target = yield* Target,
+          mcp = yield* McpClient;
+        // MCP tool input schemas use JSON Schema 2020-12, which this validator implements.
+        const validator = new CfWorkerJsonSchemaValidator();
+        const client = yield* mcp.connect(target.apiKey, "skills-input-schema");
+        const call = (step: string, input: Record<string, unknown>) =>
+          client.use(step, (client, signal) =>
+            client.callTool({ name: "skills", arguments: input }, undefined, { signal }),
+          );
+        // Every text an agent reads before calling skills: each mode's tool descriptions and
+        // the server instructions, which are the Executor app's entry skill.
+        const texts: { readonly source: string; readonly examples: ReadonlyArray<string> }[] = [];
+        let advertised: Record<string, unknown> | undefined;
+        for (const mode of ["model", "native", "browser"] as const) {
+          const connection = yield* mcp.connect(target.apiKey, `skills-guidance-${mode}`, {
+            mode,
+          });
+          const listed = yield* Schema.decodeUnknownEffect(Listed)(
+            yield* connection.use(`List the ${mode} mode tools`, (client) => client.listTools()),
+          );
+          for (const tool of listed.tools) {
+            if (tool.name === "skills") advertised ??= tool.inputSchema;
+            texts.push({
+              source: `${mode} ${tool.name} description`,
+              examples: skillsExamples(tool.description ?? "", tool.name === "skills"),
+            });
+          }
+          const instructions = yield* connection.use(
+            `Read the ${mode} mode instructions`,
+            (client) => Promise.resolve(client.getInstructions() ?? ""),
+          );
+          texts.push({
+            source: `${mode} instructions`,
+            examples: skillsExamples(instructions, false),
+          });
+        }
+        if (advertised === undefined)
+          return yield* Effect.die("Every MCP mode must list the skills tool");
+        const accepts = validator.getValidator(advertised);
+
+        // The advertised schema and the runtime agree on every read shape, and both refuse a
+        // document or reference without its app or skill.
+        const index = yield* Schema.decodeUnknownEffect(Index)(
+          (yield* call("List every skill", {})).structuredContent,
+        );
+        const guide = index.skills.find(
+          (skill) => skill.name === "executor" && skill.app.slug === "executor",
+        );
+        if (guide === undefined)
+          return yield* Effect.die("The Executor app must publish its entry skill");
+        const shapes: ReadonlyArray<readonly [Record<string, unknown>, boolean]> = [
+          [{}, true],
+          [{ app: "executor" }, true],
+          [{ app: "executor", name: "executor" }, true],
+          [{ app: "executor", name: "executor", file: "feedback.md" }, true],
+          [{ name: "executor" }, false],
+          [{ name: "executor", version: guide.version }, false],
+          [{ revision: guide.revision }, false],
+          [{ file: "feedback.md" }, false],
+          [{ app: "executor", file: "feedback.md" }, false],
+        ];
+        for (const [input, valid] of shapes) {
+          const result = yield* call(`Call skills with ${JSON.stringify(input)}`, input);
+          expect({
+            input,
+            schema: accepts(input).valid,
+            runtime: result.isError !== true,
+          }).toEqual({ input, schema: valid, runtime: valid });
+        }
+        const refused = yield* call("Read a skill without its app", { name: "executor" });
+        // The refusal names the call that works.
+        expect(refused.content).toEqual([
+          {
+            type: "text",
+            text: expect.stringContaining('{app: "executor", name: "executor"}'),
+          },
+        ]);
+
+        // Every Executor app skill document and reference: the guidance agents read next.
+        const listed = yield* Schema.decodeUnknownEffect(Index)(
+          (yield* call("List the Executor app's skills", { app: guide.app.slug }))
+            .structuredContent,
+        );
+        for (const skill of listed.skills) {
+          const document = yield* Schema.decodeUnknownEffect(Document)(
+            (yield* call(`Read the ${skill.name} skill`, { app: skill.app.slug, name: skill.name }))
+              .structuredContent,
+          );
+          texts.push({
+            source: `${skill.name}/SKILL.md`,
+            examples: skillsExamples(document.content, false),
+          });
+          for (const file of document.files.filter((file) => file !== "SKILL.md")) {
+            const reference = yield* Schema.decodeUnknownEffect(Document)(
+              (yield* call(`Read ${skill.name}/${file}`, {
+                app: skill.app.slug,
+                name: skill.name,
+                file,
+                version: skill.version,
+                revision: skill.revision,
+              })).structuredContent,
+            );
+            texts.push({
+              source: `${skill.name}/${file}`,
+              examples: skillsExamples(reference.content, false),
+            });
+          }
+        }
+        // The texts that send agents to skills give a call they can make.
+        for (const source of [
+          "model skills description",
+          "model execute description",
+          "native execute description",
+          "browser execute description",
+          "model instructions",
+        ])
+          expect(
+            texts.find((text) => text.source === source)?.examples.length ?? 0,
+            source,
+          ).toBeGreaterThan(0);
+        const examples = new Map<string, string>();
+        for (const text of texts)
+          for (const example of text.examples)
+            if (!examples.has(example)) examples.set(example, text.source);
+        for (const [example, source] of examples) {
+          const input = yield* Schema.decodeUnknownEffect(SkillsInput)(example);
+          expect(accepts(input).valid, `${source}: ${example}`).toBe(true);
+          const result = yield* call(`Run the ${source} example ${example}`, input);
+          expect(
+            result.isError,
+            `${source}: ${example} ${JSON.stringify(result.content)}`,
+          ).not.toBe(true);
         }
       }).pipe(Effect.provide(McpClient.layer)),
     ),

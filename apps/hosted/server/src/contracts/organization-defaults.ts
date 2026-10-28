@@ -8,10 +8,10 @@ import {
   AccountSelectionInvalid,
   AppNotFound,
   AppNotDeployed,
-  AppDeploymentChanged,
-  DeploymentBuildFailed,
+  AppVersionChanged,
+  VersionBuildFailed,
   BuildMemoryExceeded,
-  DeploymentNotFound,
+  VersionNotFound,
   AppNameTaken,
   AppSlugTaken,
   SkillDefinitionInvalid,
@@ -30,7 +30,7 @@ export class OrganizationDefaultsPending extends Schema.TaggedError<Organization
   {},
 ) {}
 
-/** Setup preserves safe generation and deployment failures alongside storage failures. */
+/** Setup preserves safe generation and deploy failures alongside storage failures. */
 export const OrganizationDefaultsError = Schema.Union([
   OrganizationDefaultsPending,
   StorageError,
@@ -38,15 +38,15 @@ export const OrganizationDefaultsError = Schema.Union([
   SourcePathConflict,
   SourcePathNotUnicode,
   TemplateError.annotate({ httpApiStatus: 422 }),
-  DeploymentBuildFailed,
+  VersionBuildFailed,
   BuildMemoryExceeded,
-  DeploymentNotFound,
+  VersionNotFound,
   AppNameTaken,
   AppSlugTaken,
   SkillDefinitionInvalid,
   AppNotFound,
   AppNotDeployed,
-  AppDeploymentChanged,
+  AppVersionChanged,
   AccountNotFound,
   AccountFieldsInvalid,
   AuthMethodInvalid,
@@ -62,8 +62,8 @@ export interface ExecutorUserAccount {
 
 /**
  * One-time product setup; installed apps retain their ordinary lifecycle afterward. Setup that
- * saves webhook source intent, an upgrade or a new link, wakes source reconciliation through the
- * caller's {@link ScheduleWakeup}.
+ * saves webhook source intent, a new link, wakes source reconciliation through the caller's
+ * {@link ScheduleWakeup}.
  */
 export class OrganizationDefaults extends Context.Service<
   OrganizationDefaults,

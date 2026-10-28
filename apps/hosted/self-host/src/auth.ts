@@ -1,4 +1,8 @@
-import { selfHostAuthOptions, selfHostAuthSettings } from "./implementation/auth-options.ts";
+import {
+  selfHostAuthOptions,
+  selfHostAuthSettings,
+  selfHostSsoDiscovery,
+} from "./implementation/auth-options.ts";
 import { selfHostRegistration, selfHostUserHooks } from "./implementation/registration.ts";
 /** Better Auth over the host's shared, persisted PGlite database. */
 import { betterAuth } from "better-auth";
@@ -10,6 +14,7 @@ import {
   provisionHostedOAuthResources,
   ApiAuthentication,
   apiBearerAccess,
+  callerSpanAttributes,
   mcpBearerAccess,
   Authentication,
   AuthenticationUnavailable,
@@ -32,7 +37,8 @@ export const selfHostAuth = Effect.gen(function* () {
   const settings = yield* selfHostAuthSettings;
   const database = yield* AuthDatabase;
   const sql = yield* SqlClient.SqlClient;
-  const base = selfHostAuthOptions(settings, ["x-executor-client-ip"]);
+  const discovery = yield* selfHostSsoDiscovery(settings);
+  const base = selfHostAuthOptions(settings, ["x-executor-client-ip"], discovery);
   const options = {
     ...base,
     plugins: [...base.plugins, selfHostRegistration(settings)],
@@ -86,8 +92,8 @@ export const selfHostAuth = Effect.gen(function* () {
     authenticate: (headers, mode, organization) =>
       mcpBearerAccess(origins, { headers, mode, organization }).pipe(
         Effect.provideService(SqlClient.SqlClient, sql),
-        Effect.tap(({ access }) =>
-          Effect.annotateCurrentSpan("executor.organization.id", access.organization),
+        Effect.tap(({ access, userId }) =>
+          Effect.annotateCurrentSpan(callerSpanAttributes(access.organization, userId)),
         ),
         Effect.withSpan("auth.authenticate"),
       ),
@@ -109,8 +115,8 @@ export const selfHostAuth = Effect.gen(function* () {
     authenticate: (headers, organization) =>
       apiBearerAccess(origins, { headers, organization }).pipe(
         Effect.provideService(SqlClient.SqlClient, sql),
-        Effect.tap(({ access }) =>
-          Effect.annotateCurrentSpan("executor.organization.id", access.organization),
+        Effect.tap(({ access, userId }) =>
+          Effect.annotateCurrentSpan(callerSpanAttributes(access.organization, userId)),
         ),
         Effect.withSpan("auth.authenticate"),
       ),

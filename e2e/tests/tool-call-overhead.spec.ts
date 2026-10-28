@@ -183,7 +183,24 @@ const fixture = Effect.gen(function* () {
       Effect.tap((trace) => evidence.json(file, trace.spans)),
     );
   };
-  return { deploy, execute, traced };
+  /** The tags of `app`'s tool call spans for `tool`, once `count` of them have their timing. */
+  const toolCalls = (app: typeof App.Type, tool: string, count: number) =>
+    telemetry.spans("mcp.tool.call", { "executor.app.id": app.id }).pipe(
+      Effect.map((found) =>
+        found.filter(
+          (tags) =>
+            tags["executor.tool.name"]?.endsWith(tool) === true &&
+            tags["executor.runtime.started"] !== undefined,
+        ),
+      ),
+      Effect.flatMap((found) =>
+        found.length >= count
+          ? Effect.succeed(found)
+          : Effect.fail(new Error(`${found.length} of ${count} ${tool} calls have arrived`)),
+      ),
+      Effect.retry({ schedule: Schedule.spaced("500 millis"), times: 80 }),
+    );
+  return { deploy, execute, traced, toolCalls };
 });
 
 /**
@@ -757,6 +774,7 @@ return await ${tools}.upstream.answer({})`,
         // Cloud also records the command where it reaches the app's supervisor.
         if (below(spans, warm, "runtime.cloud.call").length > 0) {
           const hop = one(below(spans, warm, "runtime.cloud.cache"), "supervisor command");
+          expect(hop.tags["executor.app.id"]).toBe(app.id);
           expect(hop.tags["cache.operation"]).toBe("acquire");
           expect(hop.tags["cache.reads"]).toBe("1");
           expect(hop.tags["cache.command.index"]).toBe("1");
@@ -861,6 +879,7 @@ export default defineApp({}, {
         const wokeIsolate = wake.tags["executor.supervisor.isolate_cold"] === "true";
         // Every command of that invocation reports the start its wake made, and so does its call.
         for (const command of below(spans, cold!, "runtime.cloud.cache")) {
+          expect(command.tags["executor.app.id"]).toBe(app.id);
           expect(command.tags["cache.supervisor.woke"]).toBe("true");
           expect(command.tags["cache.supervisor.woke_by"]).toBe("wake");
         }
@@ -875,6 +894,7 @@ export default defineApp({}, {
           for (const wake of below(spans, invocation, "runtime.cloud.wake"))
             expect(wake.tags["executor.supervisor.cold"]).toBe("false");
           for (const command of below(spans, invocation, "runtime.cloud.cache")) {
+            expect(command.tags["executor.app.id"]).toBe(app.id);
             expect(command.tags["cache.supervisor.woke"]).toBe("true");
             expect(command.tags["cache.supervisor.woke_by"]).toBe("earlier");
           }
@@ -1177,6 +1197,74 @@ export default defineApp({}, { tools: router({
           expect(supervisor.span.tags["executor.data.write"]).toBe("true");
           expect(below(supervisor.spans, supervisor.span, "runtime.app.data.facet").length).toBe(1);
         }
+      }).pipe(Effect.provide(McpClient.layer)),
+    ),
+  );
+
+  it.effect(scenarios.toolCallOverheadDatabaseFacets.title, (context) =>
+    withHostedCase(
+      context,
+      Effect.gen(function* () {
+        const { deploy, execute, toolCalls } = yield* fixture;
+        const upstream = yield* mcpOutcomeFixture;
+        // `hold` keeps running until a note exists, and `note` waits on the upstream before it
+        // writes one, so whichever of the two reaches the facet first is still running when the
+        // other arrives.
+        const app = yield* deploy(
+          `import { defineApp, mutation, query, object, number, string, router } from "apps";
+const slow = ${JSON.stringify(`${upstream}/slow`)};
+export default defineApp({}, { tools: router({
+  count: query({ input: object({}), output: number() }, async ({ sql }) =>
+    Number(sql.exec("SELECT count(*) AS notes FROM notes").one()["notes"])),
+  hold: query({ input: object({}), output: number() }, async ({ sql }) => {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      await (await fetch(slow)).text();
+      const notes = Number(sql.exec("SELECT count(*) AS notes FROM notes").one()["notes"]);
+      if (notes > 0) return notes;
+    }
+    throw new Error("No note was written while this call ran");
+  }),
+  note: mutation({ input: object({}), output: string() }, async ({ sql }) => {
+    await (await fetch(slow)).text();
+    sql.exec("INSERT INTO notes (body) VALUES (?)", "note");
+    return "noted";
+  }),
+}) });`,
+          {},
+          [notesMigration],
+        );
+        const startedFacet = (tags: Tags) =>
+          (tags["executor.runtime.started"] ?? "").split(",").includes("facet");
+        // Cloudflare counts a facet's subrequests over its whole life, so each call that finds
+        // the facet idle runs in a fresh one: none inherits what earlier calls sent.
+        for (let call = 1; call <= 3; call++) {
+          const result = yield* execute(
+            `Database call ${call} of 3`,
+            `return await tools[${JSON.stringify(app.slug)}].count({})`,
+          );
+          expect(result.structuredContent, JSON.stringify(result.structuredContent)).toMatchObject({
+            status: "completed",
+            execution: { ok: true, value: 0 },
+          });
+        }
+        const sequential = yield* toolCalls(app, "count", 3);
+        expect(sequential.map(startedFacet)).toEqual([true, true, true]);
+        // A call that arrives while another runs joins the running facet: a running call may be
+        // waiting on it, so it is never held back for a fresh one.
+        const overlapping = yield* execute(
+          "Two database calls that overlap",
+          `const app = tools[${JSON.stringify(app.slug)}];
+const held = app.hold({});
+const noted = app.note({});
+return [await held, await noted];`,
+        );
+        expect(
+          overlapping.structuredContent,
+          JSON.stringify(overlapping.structuredContent),
+        ).toMatchObject({ status: "completed", execution: { ok: true, value: [1, "noted"] } });
+        const [hold] = yield* toolCalls(app, "hold", 1);
+        const [note] = yield* toolCalls(app, "note", 1);
+        expect([hold!, note!].filter(startedFacet).length).toBe(1);
       }).pipe(Effect.provide(McpClient.layer)),
     ),
   );

@@ -2,7 +2,7 @@
  * The `1_app_framework_pin` data step commits `dependencies.apps` to every existing app without
  * redeploying it. Local and self-host run it at startup; this scenario starts its product with the
  * step held in report mode and gives apps every position whose `main` lacks a declaration. This
- * host builds only declared source, so the running deployments declare the published beta.0.
+ * host builds only declared source, so the running versions declare the published beta.0.
  * Positions whose running build has no declaration need a host that built undeclared source, and
  * are not reproduced here. It then applies the step and checks the report, the pins, a conflict
  * retried at the next start, the catch-up step pinning an app created meanwhile to beta.5, a later
@@ -55,7 +55,7 @@ export default defineApp({ accounts: {} }, {
 });
 const manifest = { name: "pin-fixture", private: true, type: "module", dependencies: {} };
 const pinnedManifest = `${JSON.stringify({ dependencies: { apps: release } }, null, 2)}\n`;
-/** Files a running deployment builds: the source, declaring the published protocol-1 beta.0. */
+/** Files a running version builds: the source, declaring the published protocol-1 beta.0. */
 const deployedFiles = (revision: string) => [
   index(revision),
   {
@@ -70,7 +70,7 @@ const App = Schema.Struct({
   id: Schema.String,
   code: Schema.String,
   name: Schema.String,
-  activeDeployment: Schema.NullOr(Schema.String),
+  activeVersion: Schema.NullOr(Schema.String),
 });
 type App = typeof App.Type;
 const Deployed = Schema.Struct({ app: App });
@@ -92,7 +92,7 @@ interface Surface {
   readonly commit: (app: App, files: Files, message: string) => Effect.Effect<void, unknown, Api>;
   readonly framework: (app: App) => Effect.Effect<string, unknown, Api>;
   readonly executorApp: Effect.Effect<App, unknown, Api>;
-  /** The files of the running deployment. */
+  /** The files of the running version. */
   readonly running: (app: App) => Effect.Effect<Files, unknown, Api>;
   readonly cleanup: (app: App) => Effect.Effect<unknown, unknown, Api>;
 }
@@ -276,7 +276,7 @@ const startupPin = (surface: Surface) =>
       status: "complete",
     });
 
-    // Apps in every position against their running deployment whose main declares no framework.
+    // Apps in every position against their running version whose main declares no framework.
     // A manifest that dropped its declaration after the running build.
     const packaged = yield* track(surface.deploy(unique("Packaged"), deployedFiles("first")));
     yield* surface.commit(
@@ -311,7 +311,7 @@ const startupPin = (surface: Surface) =>
       ]),
     );
     // The host-managed Executor app with protocol-1 source and no declaration on main, like every
-    // copy made before templates declared one. Its running deployment is the template's.
+    // copy made before templates declared one. Its running version is the template's.
     const executorApp = yield* surface.executorApp;
     const executorFiles = [index("executor")];
     yield* surface.commit(executorApp, executorFiles, "Edit the Executor app");
@@ -398,7 +398,7 @@ const startupPin = (surface: Surface) =>
         before[apps.indexOf(app)],
       );
 
-    // Nothing was redeployed: running deployments keep serving the framework they were built with.
+    // Nothing was redeployed: running versions keep serving the framework they were built with.
     expect(yield* Effect.forEach(apps, surface.get)).toEqual(running);
     expect(yield* surface.framework(diverged)).toBe("beta.0");
 
@@ -465,7 +465,8 @@ const startupPin = (surface: Surface) =>
  * Cloudflare Artifacts, so this organization's apps report `failed` and keep the run retrying while
  * the scenario observes it. Each retrying pass records its next start, 30 seconds after the first
  * pass and doubling; no pass starts before the previous one's time, and a tick before it starts
- * none. Nothing is ever applied.
+ * none. Nothing is ever applied. A tick's `job.dispatch` records a failed or partial run when items
+ * it handled failed, and a completed one when it only waited out the backoff.
  */
 const cloudReport = (surface: Surface) =>
   Effect.gen(function* () {
@@ -481,10 +482,12 @@ const cloudReport = (surface: Surface) =>
     );
     yield* Effect.addFinalizer(() => surface.cleanup(app).pipe(Effect.ignore));
     const passes = dataStepPasses(log, step);
-    // Delivered `data_step.advance` spans of ticks that found the step waiting out its backoff.
+    // The traces of ticks that found the step waiting out its backoff.
     const waiting = telemetry
-      .spans("data_step.advance", { "data_step.name": step, "data_step.status": "waiting" })
-      .pipe(Effect.map((spans) => spans.length));
+      .search("data_step.advance", { "data_step.name": step, "data_step.status": "waiting" })
+      .pipe(Effect.map((found) => new Set(found.data.map(({ traceId }) => traceId))));
+    const dispatches = (attributes: Readonly<Record<string, string>>) =>
+      telemetry.search("job.dispatch", { "executor.job": "data-steps", ...attributes });
     const tick = Effect.scoped(
       http
         .get(
@@ -512,6 +515,7 @@ const cloudReport = (surface: Surface) =>
 
     // Restart the run now that this scenario's app exists, once no pass holds it.
     const logged = (yield* passes).length;
+    const dispatched = new Set((yield* dispatches({})).data.map(({ traceId }) => traceId));
     const restart = yield* processes
       .string(
         ChildProcess.make(
@@ -567,6 +571,20 @@ const cloudReport = (surface: Surface) =>
     );
     // This app and the organization's Executor app.
     expect(started.summary.owners[surface.owner]).toEqual({ failed: 2 });
+    // The tick that handled them records its failed items, though its job route answered 204.
+    const failedTicks = yield* dispatches({ "executor.job.failure": "DataStepItemFailed" }).pipe(
+      Effect.flatMap((found) => {
+        const fresh = found.data.filter(({ traceId }) => !dispatched.has(traceId));
+        return fresh.length === 0
+          ? Effect.fail(new Error("No dispatch with failed items has reached Motel"))
+          : Effect.succeed(fresh);
+      }),
+      Effect.retry({ schedule: Schedule.spaced("500 millis"), times: 60 }),
+    );
+    for (const { span } of failedTicks) {
+      expect(["partial", "failed"]).toContain(span.tags["executor.outcome"]);
+      expect(span.tags["http.response.status_code"]).toBe("204");
+    }
 
     // A tick before the first pass's retry time finds the step waiting and starts no pass.
     expect(
@@ -576,13 +594,35 @@ const cloudReport = (surface: Surface) =>
     const waited = yield* waiting;
     const before = (yield* ofRun).length;
     yield* tick;
-    yield* waiting.pipe(
-      Effect.flatMap((count) =>
-        count > waited ? Effect.void : Effect.fail(new Error("No waiting tick delivered yet")),
-      ),
+    const waitingTrace = yield* waiting.pipe(
+      Effect.flatMap((traces) => {
+        const fresh = [...traces].find((trace) => !waited.has(trace));
+        return fresh === undefined
+          ? Effect.fail(new Error("No waiting tick delivered yet"))
+          : Effect.succeed(fresh);
+      }),
       Effect.retry({ schedule: Schedule.spaced("250 millis"), times: 120 }),
     );
     expect((yield* ofRun).length).toBe(before);
+    // Waiting out a backoff is not a failure: that tick's dispatch records a completed run.
+    const waitingDispatch = yield* telemetry.query(waitingTrace).pipe(
+      Effect.flatMap((trace) => {
+        const dispatch = trace.data.find(
+          ({ span }) =>
+            span.operationName === "job.dispatch" && span.tags["executor.job"] === "data-steps",
+        );
+        return dispatch === undefined
+          ? Effect.fail(new Error("The waiting tick's dispatch has not arrived"))
+          : Effect.succeed(dispatch.span);
+      }),
+      Effect.retry({ schedule: Schedule.spaced("250 millis"), times: 120 }),
+    );
+    expect(waitingDispatch.status).not.toBe("error");
+    expect(waitingDispatch.tags).toMatchObject({
+      "http.response.status_code": "204",
+      "executor.outcome": "completed",
+    });
+    expect(waitingDispatch.tags).not.toHaveProperty("executor.job.failure");
 
     // Once it passes, the next tick starts the next pass. The Worker's own cron may start it first.
     yield* Effect.sleep(Duration.millis(Math.max(0, retryAt(started) - Date.now())));

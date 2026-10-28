@@ -1,13 +1,14 @@
+import { withLegacyKeys } from "@executor-js/utils/legacy-keys";
 import { ApiError } from "@executor-js/utils/api-error";
 import { AppProviderFailed } from "./tools.ts";
 /** Durable, account-bound webhook subscriptions. Products authorize management; callbacks authenticate in app code. */
-import { Schema, type Effect } from "effect";
+import { Schema, SchemaGetter, type Effect } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
 import { HostedWebhook, WebhookRequestData, WebhookResponseData } from "apps/contracts";
 import {
   AppId,
   AccountId,
-  DeploymentId,
+  VersionId,
   WebhookId,
   OwnerId,
   Json,
@@ -26,7 +27,7 @@ import {
   AccountSelectionInvalid,
 } from "./apps.ts";
 import { AccountNotFound } from "./account.ts";
-import { DeploymentNotFound } from "./deployment.ts";
+import { VersionNotFound } from "./version.ts";
 import { OAuthReconnectRequired, OAuthRenewalFailed } from "./oauth.ts";
 
 /** SDK deadlines and coordination lease for webhook work; durations are milliseconds. */
@@ -49,14 +50,14 @@ export const defaultWebhookLifecycleLimits = WebhookLifecycleLimits.make({
  * app links, user requirements from the actor's user links. An app-account webhook has no
  * actor: its deliveries run without a caller, with the app's accounts only.
  */
-export const WebhookSubscription = Schema.Struct({
+export const WebhookSubscriptionFields = Schema.Struct({
   id: WebhookId,
   app: AppId,
   owner: OwnerId,
   /** The subject whose access each callback is checked against; null for an app-account webhook. */
   actor: Schema.NullOr(Schema.NonEmptyString),
   key: Schema.NonEmptyString,
-  deployment: DeploymentId,
+  version: VersionId,
   name: Schema.NonEmptyString,
   sourceAccount: AccountId,
   callbackUrl: HttpUrl,
@@ -71,6 +72,9 @@ export const WebhookSubscription = Schema.Struct({
   failure: Schema.NullOr(Schema.Literals(["register", "unregister"])),
   createdAt: Schema.Date,
 });
+export const WebhookSubscription = WebhookSubscriptionFields.pipe(
+  withLegacyKeys({ version: "deployment" }),
+);
 /** Parsed subscription metadata for SDK and product views. */
 export type WebhookSubscription = typeof WebhookSubscription.Type;
 /** A subscription does not exist within the requested app. */
@@ -98,15 +102,46 @@ const webhookFailures = {
   delivery: "The webhook delivery could not be accepted.",
   inactive: "The webhook subscription is stopped or disabled.",
 } as const;
+/** Which part of an `input` failure did not match the declaration. */
+const webhookMismatches = {
+  "app-account":
+    "This webhook's source is an app account, so a caller cannot create its subscription: Executor creates it when an account is linked to the app for that requirement. List the app's webhooks to find it; one that is setup-required has a setup link.",
+  source:
+    "The source account is not linked to this app for the webhook's account requirement. Link it to the app, or name an account that is linked.",
+  config:
+    "The webhook configuration does not match the definition's configuration schema. Read the app's webhook definitions for the schema.",
+} as const;
+const WebhookMismatch = Schema.optionalKey(Schema.Literals(["app-account", "source", "config"]));
+/**
+ * Declared but not yet sent. Clients and Executor apps that hold an earlier document decode
+ * `WebhookFailed` against a closed object with the five original reasons, so a new reason value or
+ * field would turn this response into a generic failure for them. The specific cause reaches them
+ * through `message` under the existing `input` reason; a later release can send this field once
+ * cached documents have refreshed.
+ */
+const WebhookMismatchField = WebhookMismatch.pipe(
+  Schema.decodeTo(WebhookMismatch, {
+    decode: SchemaGetter.passthrough(),
+    encode: SchemaGetter.omit(),
+  }),
+);
+const webhookFailure = (failure: {
+  readonly reason: keyof typeof webhookFailures;
+  readonly mismatch?: keyof typeof webhookMismatches;
+}) =>
+  failure.reason === "input" && failure.mismatch !== undefined
+    ? webhookMismatches[failure.mismatch]
+    : webhookFailures[failure.reason];
 /** The host cannot run this webhook. Internal provider failures and payloads remain private. */
 export const WebhookFailed = ApiError.define({
   tag: "WebhookFailed",
   status: 422,
   fields: {
     reason: Schema.Literals(["unavailable", "definition", "input", "delivery", "inactive"]),
+    mismatch: WebhookMismatchField,
   },
-  message: ({ reason }) => webhookFailures[reason],
-  recorded: ({ reason }) => webhookFailures[reason],
+  message: webhookFailure,
+  recorded: webhookFailure,
 });
 export type WebhookFailed = typeof WebhookFailed.Type;
 /** Shared operation failures, retained as concrete schema variants at HTTP boundaries. */
@@ -118,7 +153,7 @@ export const WebhookErrors = [
   AppNotFound,
   AppNotDeployed,
   AccountNotFound,
-  DeploymentNotFound,
+  VersionNotFound,
   AccountRequired,
   AccountChoiceUnsupported,
   AccountSelectionInvalid,
@@ -158,12 +193,14 @@ export const WebhookSourceConfig = Schema.Record(Schema.NonEmptyString, Schema.J
 /**
  * One account linked to an app as a webhook source. Executor keeps one managed subscription per
  * definition of the source's scope that the account's provider can serve, on the app's active
- * deployment, and replaces them when the app activates another deployment. Several users linking
+ * version. When the app activates another version it registers them again, except that a manual
+ * subscription whose setup the new version still serves moves to it with its callback URL and
+ * secret. Several users linking
  * the same account share it. A source without an actor is an app link: it serves app-account
  * webhooks, whose deliveries run without a caller. An account linked in both scopes is one source,
  * serving as its app link.
  */
-export const WebhookSource = Schema.Struct({
+export const WebhookSourceFields = Schema.Struct({
   /** Identifies this source; linking the account again after its removal creates another. */
   id: Schema.NonEmptyString,
   /** Increases with each saved change of its actor, configuration or link. */
@@ -177,15 +214,18 @@ export const WebhookSource = Schema.Struct({
   failure: Schema.NullOr(
     Schema.Literals(["accounts", "configuration", "registration", "cleanup", "deployment"]),
   ),
-  reconciledDeployment: Schema.NullOr(DeploymentId),
+  reconciledVersion: Schema.NullOr(VersionId),
   createdAt: Schema.Date,
 });
+export const WebhookSource = WebhookSourceFields.pipe(
+  withLegacyKeys({ reconciledVersion: "reconciledDeployment" }),
+);
 export type WebhookSource = typeof WebhookSource.Type;
 /** A listed webhook source, with its account's label so views can name it. */
 export const WebhookSourceSummary = Schema.Struct({
-  ...WebhookSource.fields,
+  ...WebhookSourceFields.fields,
   label: Schema.String,
-});
+}).pipe(withLegacyKeys({ reconciledVersion: "reconciledDeployment" }));
 export type WebhookSourceSummary = typeof WebhookSourceSummary.Type;
 /** Change a webhook source's configuration. */
 export const ConfigureWebhookSource = Schema.Struct({

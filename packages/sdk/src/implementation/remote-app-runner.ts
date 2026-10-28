@@ -26,6 +26,8 @@ import { BuildId } from "../contracts/shared.ts";
 import { LoadedWorkerBuild } from "../contracts/worker-build.ts";
 import { WorkerInvocation } from "../contracts/workerd-host.ts";
 import {
+  classify,
+  failedFrom,
   RunnerIngress,
   runnerIngress,
   type AppCapabilities,
@@ -69,7 +71,15 @@ export type RemoteAppRunner<Result> = {
 
 const RemoteResult = Schema.fromJsonString(
   Schema.Union([
-    Schema.Struct({ ok: Schema.Literal(true), value: Schema.Json }),
+    Schema.Struct({
+      ok: Schema.Literal(true),
+      value: Schema.Json,
+      /**
+       * The host API revision the runner bound the call's cache and network to. A runner from
+       * before that check sends none, and its caller refuses the result; see `remoteAppRunner`.
+       */
+      hostApi: Schema.optionalKey(Schema.NonEmptyString),
+    }),
     Schema.Struct({
       ok: Schema.Literal(false),
       reason: Schema.optionalKey(RuntimeFailure),
@@ -235,21 +245,39 @@ const localCapabilities = (remote: RemoteCapabilities, load: () => Promise<Loade
     } satisfies AppCapabilities;
   });
 
-const answer = (effect: Effect.Effect<unknown, unknown>) =>
+/**
+ * A failure the caller can name. Anything that is not already a runtime failure is classified here,
+ * where its text is: past the boundary the caller would see only that the call failed.
+ */
+const refused = (error: unknown) =>
+  Schema.is(RuntimeProtocolUnsupported)(error)
+    ? { ok: false as const, unsupported: error }
+    : Schema.is(RuntimeProtocolFailed)(error)
+      ? {
+          ok: false as const,
+          ...(error.reason === undefined ? {} : { reason: error.reason }),
+          ...(error.message ? { message: error.message } : {}),
+        }
+      : { ok: false as const, reason: classify(error) };
+const encodeResult = Schema.encodeUnknownEffect(RemoteResult);
+
+/**
+ * The runner's reply as JSON: its value, or the failure it can name. A rejected RPC loses an error's
+ * fields, and Cap'n Web replaces its text, so a failure crosses inside the reply instead. `hostApi`
+ * is the revision the runner bound the call to; see `RemoteResult`.
+ */
+export const runnerReply = (
+  effect: Effect.Effect<{ readonly value: unknown; readonly hostApi?: string }, unknown>,
+) =>
   effect.pipe(
-    Effect.map((value) => ({ ok: true as const, value })),
-    Effect.catchCause((cause) => {
-      const error = Cause.squash(cause);
-      if (Schema.is(RuntimeProtocolUnsupported)(error))
-        return Effect.succeed({ ok: false as const, unsupported: error });
-      if (!Schema.is(RuntimeProtocolFailed)(error)) return Effect.succeed({ ok: false as const });
-      return Effect.succeed({
-        ok: false as const,
-        ...(error.reason === undefined ? {} : { reason: error.reason }),
-        ...(error.message ? { message: error.message } : {}),
-      });
-    }),
-    Effect.flatMap(Schema.encodeUnknownEffect(RemoteResult)),
+    Effect.map((result) => ({ ok: true as const, ...result })),
+    Effect.catchCause((cause) => Effect.succeed(refused(Cause.squash(cause)))),
+    Effect.flatMap((result) =>
+      encodeResult(result).pipe(
+        // A value that is not JSON cannot cross; say so instead of failing the RPC without a reason.
+        Effect.catch(() => encodeResult({ ok: false, reason: "invalid-reply" })),
+      ),
+    ),
     Effect.orDie,
   );
 
@@ -262,7 +290,7 @@ export const serveAppRunner = (
   read: (build: BuildId) => Effect.Effect<LoadedWorkerBuild, RuntimeBuildUnavailable>,
 ): RemoteAppRunner<Effect.Effect<string>> => ({
   invoke: (invocation, capabilities) =>
-    answer(
+    runnerReply(
       Effect.scoped(
         Effect.gen(function* () {
           // The runner's part starts here, so decoding the call and reading its build count too.
@@ -276,9 +304,12 @@ export const serveAppRunner = (
           // The caller's trace context travels in the invocation's headers; the runner's spans join it.
           return yield* Effect.gen(function* () {
             const loader = yield* invocationBuildLoader(decoded, read(build));
-            return yield* loader.refused(
+            const value = yield* loader.refused(
               runner.invoke(decoded, yield* localCapabilities(capabilities, loader.load)),
             );
+            return decoded.hostApi === undefined
+              ? { value }
+              : { value, hostApi: decoded.hostApi.revision };
           }).pipe(
             Effect.provideService(RunnerIngress, ingress),
             withRemoteSpan(
@@ -290,22 +321,35 @@ export const serveAppRunner = (
       ).pipe(Effect.ensuring(Effect.sync(() => releaseCapabilities(capabilities)))),
     ),
   declare: (bundle, headers) =>
-    answer(
+    runnerReply(
       Schema.decodeUnknownEffect(encodedBuild)(bundle).pipe(
         Effect.flatMap((bundle) => runner.declare(bundle, headers)),
+        Effect.map((value) => ({ value })),
       ),
     ),
 });
 
-const result = <E>(effect: Effect.Effect<string, E>) =>
+/**
+ * Decode a runner's reply: its value, or the runtime failure it names. A call bound to a host API
+ * revision (`hostApi`) succeeds only when the runner says it bound the call's cache and network to
+ * that revision: a runner deployed before that check ignores it, and would fill the revision's
+ * cache with whichever document it read.
+ */
+export const runnerResult = <E>(effect: Effect.Effect<string, E>, hostApi?: string) =>
   effect.pipe(
-    Effect.mapError(() => new RuntimeProtocolFailed()),
-    Effect.flatMap(Schema.decodeUnknownEffect(RemoteResult)),
-    Effect.mapError(() => new RuntimeProtocolFailed()),
+    // A rejected RPC carries the platform's text, such as a size or memory limit, only here.
+    Effect.catch(failedFrom(false)),
+    Effect.flatMap((reply) =>
+      Schema.decodeUnknownEffect(RemoteResult)(reply).pipe(
+        Effect.catch(() => Effect.fail(new RuntimeProtocolFailed({ reason: "invalid-reply" }))),
+      ),
+    ),
     Effect.flatMap(
       (reply): Effect.Effect<unknown, RuntimeProtocolFailed | RuntimeProtocolUnsupported> =>
         reply.ok
-          ? Effect.succeed(reply.value)
+          ? hostApi === undefined || reply.hostApi === hostApi
+            ? Effect.succeed(reply.value)
+            : Effect.fail(new RuntimeProtocolFailed({ reason: "unsupported" }))
           : reply.unsupported !== undefined
             ? Effect.fail(reply.unsupported)
             : Effect.fail(
@@ -332,15 +376,19 @@ export const remoteAppRunner = <E>(remote: RemoteAppRunner<Effect.Effect<string,
           workflowControls: capabilities.controls !== null,
         }).pipe(Effect.mapError(() => new RuntimeProtocolFailed()));
         const callbacks = yield* remoteCapabilities(capabilities, lifetime.signal);
-        return yield* result(remote.invoke(encoded, callbacks));
+        return yield* runnerResult(remote.invoke(encoded, callbacks), invocation.hostApi?.revision);
       }),
-    ).pipe(Effect.withSpan("runtime.app.remote.invoke")),
+    ).pipe(
+      Effect.withSpan("runtime.app.remote.invoke", {
+        attributes: { "executor.app.id": invocation.app },
+      }),
+    ),
   declare: (bundle: LoadedWorkerBuild, headers: Readonly<Record<string, string>>) =>
     Effect.try({
       try: () => encodeLoadedBuild(bundle),
       catch: () => new RuntimeProtocolFailed(),
     }).pipe(
-      Effect.flatMap((encoded) => result(remote.declare(encoded, headers))),
+      Effect.flatMap((encoded) => runnerResult(remote.declare(encoded, headers))),
       Effect.withSpan("runtime.app.remote.declare"),
     ),
 });

@@ -31,7 +31,7 @@ const sections = [
   { view: "schedules", label: "Schedules" },
   { view: "webhooks", label: "Webhooks" },
   { view: "source", label: "Source" },
-  { view: "deployments", label: "Deployments" },
+  { view: "versions", label: "Versions" },
   { view: "settings", label: "Settings" },
 ] as const;
 /**
@@ -56,7 +56,7 @@ const sectionIcon = (view: (typeof sections)[number]["view"]) => {
       return WebhookIcon;
     case "source":
       return SourceCodeIcon;
-    case "deployments":
+    case "versions":
       return PackageIcon;
     case "settings":
       return Settings05Icon;
@@ -74,7 +74,7 @@ const contentClasses = {
   accounts: "min-h-0 min-w-0 flex-1 overflow-auto",
   source: "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
   history: "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
-  deployments: "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
+  versions: "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
 } as const;
 
 /** A stable app heading and linked section tabs frame each product's app details. */
@@ -103,7 +103,7 @@ export function AppDetailLayout({
           {back}
         </div>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-4 max-[740px]:min-w-0 max-[740px]:flex-1 max-[740px]:gap-y-2 max-[740px]:py-1.5">
-          <div className="flex min-w-0 flex-1 items-center gap-4 max-[740px]:gap-2.5 max-[740px]:[&_.provider-icon-large]:size-8 max-[740px]:[&_.provider-icon-large]:rounded-[7px] max-[740px]:[&_.provider-icon-large_img]:size-5">
+          <div className="flex min-w-0 flex-1 items-center gap-4 max-[740px]:gap-2.5 max-[740px]:[&_.provider-icon-large]:size-8 max-[740px]:[&_.provider-icon-large]:rounded-[7px]">
             <AppIcon app={app} large />
             <h1
               className="min-w-0 truncate text-2xl font-semibold tracking-tight max-[740px]:text-lg"
@@ -166,7 +166,7 @@ export function AppDetailLayout({
                 {section.label}
               </>
             );
-            if (!canInspectSource && (section.view === "source" || section.view === "deployments"))
+            if (!canInspectSource && (section.view === "source" || section.view === "versions"))
               return (
                 <DisabledTooltip
                   key={section.view}

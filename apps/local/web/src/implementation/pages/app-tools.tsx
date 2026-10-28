@@ -62,9 +62,7 @@ export function AppTools(props: AppToolsProps) {
   switch (readiness.state) {
     case "not-deployed":
       return (
-        <EmptyStatePanel title="No deployment yet">
-          Deploy this app to load its tools.
-        </EmptyStatePanel>
+        <EmptyStatePanel title="No version yet">Deploy this app to load its tools.</EmptyStatePanel>
       );
     case "missing":
       return <AccountSetup app={props.app} disconnected={false} />;
@@ -72,12 +70,13 @@ export function AppTools(props: AppToolsProps) {
       return (
         <AccountReconnect app={props.app.id} accounts={readiness.accounts} status="Needs sign-in" />
       );
+    // A sign-in that expired or must be renewed by hand is `reconnect` above.
     case "rejected":
       return (
         <AccountReconnect
           app={props.app.id}
           accounts={readiness.accounts}
-          status="Sign-in rejected"
+          status="Credentials refused"
         />
       );
     case "unavailable":
@@ -132,7 +131,7 @@ function AccountReconnect({
 /** Browse the complete live tool catalog with a stable, separate schema inspector. */
 function LiveAppTools({ app, requirements, selected }: AppToolsProps) {
   const navigate = useNavigate();
-  const catalog = { app: app.id, deployment: app.activeDeployment };
+  const catalog = { app: app.id, version: app.activeVersion };
   const atom = toolsAtom(catalog);
   const result = useAtomValue(atom);
   const setup = AsyncResult.isFailure(result) ? accountSetupFailure(result.cause) : Option.none();
@@ -154,7 +153,7 @@ function LiveAppTools({ app, requirements, selected }: AppToolsProps) {
   return (
     <ToolBrowser
       Failure={Failure}
-      key={`${app.id}:${app.activeDeployment}`}
+      key={`${app.id}:${app.activeVersion}`}
       query={toolCatalogAtom(catalog)}
       detail={(tool) => toolDetailAtom({ ...catalog, tool: tool.name })}
       selected={selected}
@@ -176,7 +175,7 @@ function LiveAppTools({ app, requirements, selected }: AppToolsProps) {
           tool={tool.name}
           call={callToolAtom({
             app: app.id,
-            deployment: app.activeDeployment ?? undefined,
+            version: app.activeVersion ?? undefined,
             tool: tool.name,
             kind: tool.readOnly === true ? "query" : "mutation",
           })}

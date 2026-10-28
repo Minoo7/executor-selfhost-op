@@ -9,7 +9,7 @@ import {
   untargetedLinkRefusal,
   type Grant,
 } from "@executor-js/mcp-auth";
-import { localRequest } from "./auth.ts";
+import { localBearer, localRequest } from "./auth.ts";
 import type { ServerConfig } from "../contracts/config.ts";
 import { LocalMcpUnauthorized, type LocalMcpOAuth } from "./mcp-oauth.ts";
 /** Local access and documentation I/O for the shared MCP implementation. */
@@ -19,13 +19,13 @@ import {
   ElicitationFailed,
   resolveLinkedAccounts,
   type AppId,
-  type DeploymentId,
+  type VersionId,
   type Executor,
   type ToolInvocationOptions,
 } from "@executor-js/sdk/core";
 import { appVersion, versionRequirementAccounts } from "./app-accounts.ts";
 import type { SqlClient } from "effect/sql";
-import { Context, Effect, Redacted } from "effect";
+import { Context, Effect } from "effect";
 
 /**
  * Operations as the grant checked them: they run with exactly the accounts their input names.
@@ -44,7 +44,7 @@ const grantedBackend = (sql: SqlClient.SqlClient, executor: Executor, principal:
     listApps: (input = {}) => executor.apps.list(input),
     listAccounts: (input) =>
       executor.apps.get({ app: input.app }).pipe(
-        Effect.flatMap((app) => appVersion(executor, app, input.deployment)),
+        Effect.flatMap((app) => appVersion(executor, app, input.version)),
         // Agents see the user requirements' accounts only; the app's are its app links.
         Effect.flatMap((version) => versionRequirementAccounts(sql, executor, version)),
         Effect.map((accounts) => accounts.userLinks),
@@ -89,20 +89,18 @@ export const localMcpBackend = <G extends Error>(
       if (refusal !== undefined) return yield* new GrantForbidden({ refusal });
       return yield* resolveLinkedAccounts({
         app: version.app.id,
-        deployment: version.deployment,
+        version: version.version,
         appLinks,
         userLinks: targetedLinks(authority, version.app.id, linked),
       });
     });
-  /** Calls and listings run on the active deployment; skill reads on the deployment they pin. */
-  const resolved = <
-    I extends { readonly app: AppId; readonly deployment?: DeploymentId | undefined },
-  >(
+  /** Calls and listings run on the active version; skill reads on the version they pin. */
+  const resolved = <I extends { readonly app: AppId; readonly version?: VersionId | undefined }>(
     input: I,
     pinned: boolean,
   ) =>
     executor.apps.get({ app: input.app }).pipe(
-      Effect.flatMap((app) => appVersion(executor, app, pinned ? input.deployment : undefined)),
+      Effect.flatMap((app) => appVersion(executor, app, pinned ? input.version : undefined)),
       Effect.flatMap(accounts),
       Effect.map((accounts) => ({ ...input, accounts })),
     );
@@ -206,14 +204,13 @@ export const localMcp = (
       if (address === undefined) return oauth.invalidAddress;
       const current = Effect.gen(function* () {
         // The administrative key is full access on the plain URL only; it never enters a connection.
-        const grant =
-          request.headers.authorization === `Bearer ${Redacted.value(config.apiKey)}`
-            ? {
-                id: GrantId.make("local-administrator"),
-                policy: { kind: "all" as const },
-                target: { kind: "mcp" as const, mode: address.mode },
-              }
-            : (yield* oauth.authenticate(new Headers(request.headers))).grant;
+        const grant = localBearer(config, request.headers.authorization)
+          ? {
+              id: GrantId.make("local-administrator"),
+              policy: { kind: "all" as const },
+              target: { kind: "mcp" as const, mode: address.mode },
+            }
+          : (yield* oauth.authenticate(new Headers(request.headers))).grant;
         const refusal = deliveryRefusal(grant, address);
         if (refusal !== undefined) return yield* new GrantForbidden({ refusal });
         return grant;

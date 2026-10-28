@@ -923,6 +923,8 @@ export const liveOpenapiRouter = (options: OpenapiSourceOptions): RouterDeclarat
     name: operation.name,
     description: operation.description,
     readOnly: readOnly(operation),
+    // The app's `kinds`, or the HTTP method Executor sends.
+    kindConfirmed: true,
     ...(operation.tags === undefined ? {} : { tags: operation.tags }),
   });
   const describe = (
@@ -1058,7 +1060,7 @@ export type OpenapiToolNamesOptions = Omit<
 
 /**
  * The tools `liveOpenapiRouter` with the same options exposes, from the definition alone: no
- * account, cache or deployment. Each tool says which `methods` and `oauth` entries expose it, so
+ * account, cache or deployed version. Each tool says which `methods` and `oauth` entries expose it, so
  * an author can check the names a `withApprovals` policy matches before any account connects.
  * `skipped` lists only the operations the compiler left out and why. An operation no configured
  * `methods` or `oauth` entry can authorize is missing from `tools` and not listed in `skipped`.

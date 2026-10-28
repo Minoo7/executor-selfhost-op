@@ -10,10 +10,12 @@ import { hostedResourceAccessHandlers } from "./resource-access.ts";
 import { hostedOAuthClientHandlers } from "./oauth-clients.ts";
 import { hostedScheduleHandlers } from "./schedules.ts";
 /** Shared hosted handlers. No Cloudflare, Node, or local-product dependencies. */
+import { requestRejections } from "@executor-js/sdk/core";
 import { Effect, Layer } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { HttpServerRequest } from "effect/http";
 import { HostedApi } from "../contracts/api.ts";
+import { filterCatalog } from "@executor-js/catalog/contracts";
 import { HostedCatalog } from "../contracts/catalog.ts";
 import { ApiAuthentication, CurrentPrincipal } from "../contracts/auth.ts";
 import { hostedOrganizationHandlers } from "./organization.ts";
@@ -34,7 +36,11 @@ const health = HttpApiBuilder.group(HostedApi, "health", (handlers) =>
 );
 
 const catalog = HttpApiBuilder.group(HostedApi, "catalog", (handlers) =>
-  handlers.handle("list", () => Effect.flatMap(HostedCatalog, (catalog) => catalog.list)),
+  handlers.handle("list", ({ query }) =>
+    Effect.flatMap(HostedCatalog, (catalog) => catalog.list).pipe(
+      Effect.map((entries) => filterCatalog(entries, query)),
+    ),
+  ),
 );
 
 const apiContext = HttpApiBuilder.group(HostedApi, "context", (handlers) =>
@@ -94,4 +100,4 @@ export const hostedHandlers = Layer.mergeAll(
       }),
     ),
   ),
-);
+).pipe(Layer.provide(requestRejections));

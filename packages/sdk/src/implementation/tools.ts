@@ -38,14 +38,20 @@ import {
   type SelectedAccounts,
 } from "../contracts/apps.ts";
 import { AccountNotFound } from "../contracts/account.ts";
-import { DeploymentNotFound } from "../contracts/deployment.ts";
+import { VersionNotFound } from "../contracts/version.ts";
 import {
   type AppAccountUse,
   CurrentActor,
   type Executor,
   type ResourceLifecycle,
 } from "../contracts/executor.ts";
-import { AppCodeEntered, type Runtime } from "../contracts/runtime.ts";
+import {
+  AppCodeEntered,
+  CallFailureSources,
+  runtimeFailures,
+  type CallFailureSource,
+  type Runtime,
+} from "../contracts/runtime.ts";
 import {
   Cursor,
   ToolName,
@@ -56,13 +62,14 @@ import {
   CredentialsError,
   type AccountId,
   type AppId,
-  type DeploymentId,
+  type VersionId,
 } from "../contracts/shared.ts";
 import type { Account } from "../contracts/account.ts";
 import { OAuthReconnectRequired } from "../contracts/oauth.ts";
 import { GrantReadAhead, type GrantRow, type makeOAuth } from "./oauth.ts";
 import {
   AppEvaluationFailed,
+  type AppFailure,
   appFailure,
   appFailureText,
   type CallFailure,
@@ -84,6 +91,7 @@ import {
   ToolInputs,
   type ToolInvocationOptions,
   type ToolListOptions,
+  toolPageChars,
   type ToolResumeResult,
   type Tool,
   type ToolSummary,
@@ -98,10 +106,10 @@ import {
   type Credentials,
   type StoredAccount,
   StoredApp,
-  StoredDeployment,
+  StoredVersion,
 } from "../contracts/storage.ts";
 import { makeToolApprovals } from "./tool-approvals.ts";
-import { gotApp, storedDeployment } from "./apps.ts";
+import { gotApp, storedVersion } from "./apps.ts";
 import { database, query, type Query } from "./database.ts";
 import type { OwnerId } from "../contracts/shared.ts";
 import { invocationAccounts } from "./linked-accounts.ts";
@@ -115,9 +123,10 @@ import {
   type SelectionAccountsRead,
 } from "./selection.ts";
 import type { Listings, ToolListing } from "./listings.ts";
+import { pageStart, pageTools } from "./tool-pages.ts";
 import { ownsDatabase } from "../contracts/apps.ts";
 
-/** The configured app with its active deployment, in one statement. */
+/** The configured app with its active version, in one statement. */
 const readApp = (db: Query, app: AppId) =>
   query(() =>
     db.findFirst("apps", {
@@ -137,7 +146,7 @@ interface SnapshotReads {
 }
 
 /**
- * Resolve the app, pinned deployment and the named accounts before invoking authored code. The
+ * Resolve the app, pinned version and the named accounts before invoking authored code. The
  * snapshot keeps the current actor, so work it starts, such as a workflow, is checked against the
  * same subject later.
  *
@@ -154,7 +163,7 @@ export function snapshot(
   db: Query,
   input: {
     app: AppId;
-    deployment?: DeploymentId | undefined;
+    version?: VersionId | undefined;
     accounts?: AppAccounts | undefined;
     /**
      * A selection background work captured, such as a workflow run's or a registration's, with
@@ -173,31 +182,31 @@ export function snapshot(
     const app = yield* Schema.decodeUnknownEffect(StoredApp)(row).pipe(
       Effect.mapError(() => new StorageError()),
     );
-    const deploymentId = input.deployment ?? app.activeDeployment;
-    if (deploymentId === null) return yield* new AppNotDeployed({ app: app.id });
-    // Historical invocations retain their pinned deployment and its lineage check.
-    const deployment =
-      deploymentId !== app.activeDeployment
-        ? yield* storedDeployment(db, app, deploymentId)
+    const versionId = input.version ?? app.activeVersion;
+    if (versionId === null) return yield* new AppNotDeployed({ app: app.id });
+    // Historical invocations retain their pinned version and its lineage check.
+    const version =
+      versionId !== app.activeVersion
+        ? yield* storedVersion(db, app, versionId)
         : row.deployment === null
-          ? yield* new DeploymentNotFound({ app: app.id, deployment: deploymentId })
-          : yield* Schema.decodeUnknownEffect(StoredDeployment)(row.deployment).pipe(
+          ? yield* new VersionNotFound({ app: app.id, version: versionId })
+          : yield* Schema.decodeUnknownEffect(StoredVersion)(row.deployment).pipe(
               Effect.mapError(() => new StorageError()),
             );
     const { scope, accounts, selections } = yield* chooseAccounts(
       db,
       app.id,
-      deployment,
+      version,
       input.captured === undefined
         ? input.accounts
         : scopedSelection(
-            deployment.requirements.accounts,
+            version.requirements.accounts,
             input.captured.accounts,
             input.captured.scope,
           ),
       ahead?.accounts,
     );
-    return { app, deployment, scope, selections, accounts, actor: yield* CurrentActor };
+    return { app, version, scope, selections, accounts, actor: yield* CurrentActor };
   });
 }
 
@@ -239,7 +248,7 @@ class GrantHint {
 /** Whether any of these sign-in types reads a grant; an unknown definition may. */
 const readsGrant = (types: ReadonlyArray<string | undefined> | undefined) =>
   types === undefined || types.some((type) => type !== "secrets");
-/** The {@link GrantHint} for an app's accounts, from its deployment and any account rows read. */
+/** The {@link GrantHint} for an app's accounts, from its version and any account rows read. */
 const grantHint = (
   app: Effect.Success<ReturnType<typeof gotApp>>,
   accounts: AppAccounts | undefined,
@@ -452,7 +461,7 @@ function resolveFor(
           return yield* Effect.fail(
             new AccountRequired({
               app: state.app.id,
-              deployment: state.deployment.id,
+              version: state.version.id,
               slot,
               scope: required.scope,
             }),
@@ -473,7 +482,7 @@ function resolveFor(
 const accountsOutcome = (outcome: "ready" | "reconnect" | "account_required") =>
   Effect.annotateCurrentSpan("executor.accounts.outcome", outcome);
 
-/** One resolved invocation: app, pinned deployment, actor and account selection. */
+/** One resolved invocation: app, pinned version, actor and account selection. */
 export type InvocationSnapshot = Effect.Success<ReturnType<typeof snapshot>>;
 type InvocationContext = Effect.Success<ReturnType<typeof resolve>>;
 type SelectedAccount = HostAccountSlots[string];
@@ -565,7 +574,7 @@ function invocation(
   return Schema.decodeUnknownEffect(ToolInvocation)({
     app: state.app.id,
     owner: state.app.owner,
-    deployment: state.deployment.id,
+    version: state.version.id,
     tool,
     ...(kind === undefined ? {} : { kind }),
     input,
@@ -586,14 +595,14 @@ function invocation(
 }
 
 /**
- * Check failures that are answers: the saved call's app, deployment or accounts are now missing
+ * Check failures that are answers: the saved call's app, version or accounts are now missing
  * or different. Anything else, such as storage failing, answers nothing.
  */
 const isContextChange = Schema.is(
   Schema.Union([
     AppNotFound,
     AppNotDeployed,
-    DeploymentNotFound,
+    VersionNotFound,
     AccountNotFound,
     AccountSelectionInvalid,
     AccountRequired,
@@ -611,7 +620,7 @@ type Renewal = "renewed" | RenewalFailure;
 
 /** The typed error of a failed call. */
 const runtimeFailure = (
-  identity: { app: AppId; deployment: DeploymentId; tool: ToolName },
+  identity: { app: AppId; version: VersionId; tool: ToolName },
   state: InvocationSnapshot,
   renewal: Renewal | undefined,
 ) =>
@@ -658,10 +667,8 @@ const runtimeFailure = (
       HostToolApprovalRequired: () => new ToolApprovalRequired(identity),
       HostToolPolicyFailed: () => new ToolPolicyFailed(identity),
       HostOutputInvalid: () => new ToolCallFailed({ ...identity, reason: "Tool execution failed" }),
-      HostRequestInvalid: () =>
-        new AppEvaluationFailed({ ...identity, reason: "App evaluation failed" }),
-      HostAccountsInvalid: () =>
-        new AppEvaluationFailed({ ...identity, reason: "App evaluation failed" }),
+      HostRequestInvalid: (error) => evaluationFailure(identity, error),
+      HostAccountsInvalid: (error) => evaluationFailure(identity, error),
       // Also how the app's framework reports an unexpected failure anywhere in its handling of
       // the call, including after the handler returned, so it is not reported as a failure to
       // load the app's tools.
@@ -674,19 +681,80 @@ const runtimeFailure = (
       HostEvaluationFailed: (error) => evaluationFailure(identity, error),
       SkillLoadFailed: (error) => evaluationFailure(identity, error),
       McpError: (error) => operationMcpFailure(identity, error),
-      RuntimeBuildUnavailable: () =>
-        new AppEvaluationFailed({ ...identity, reason: "App evaluation failed" }),
+      RuntimeBuildUnavailable: (error) => evaluationFailure(identity, error),
       // The runtime's reply to the call was lost or unusable, which can happen after the tool ran,
-      // so it is not reported as a failure to load the app's tools.
-      RuntimeProtocolFailed: () =>
-        new ToolCallFailed({
-          ...identity,
-          reason: "Executor did not receive a usable result from this tool call.",
-        }),
-      RuntimeProtocolUnsupported: (error) =>
-        new AppEvaluationFailed({ ...identity, reason: error.message }),
+      // so it is not reported as a failure to load the app's tools. The kind is matched from the
+      // runtime's error, which the app's isolate can produce, so it is not claimed: a size failure
+      // stays a likely cause.
+      RuntimeProtocolFailed: ({ reason }) =>
+        reason === "too-large"
+          ? new ToolCallFailed({
+              ...identity,
+              reason: "Executor did not receive this tool call's result.",
+              rpcLimitMatched: true,
+            })
+          : new ToolCallFailed({
+              ...identity,
+              reason: `Executor did not receive a usable result from this tool call. ${
+                reason === undefined
+                  ? "The runtime did not report why."
+                  : reason === "unrecognized"
+                    ? "The runtime did not recognize why."
+                    : `The runtime’s error matches this cause, which Executor has not confirmed: ${runtimeFailures[reason]}.`
+              }`,
+            }),
+      RuntimeProtocolUnsupported: (error) => evaluationFailure(identity, error, error.message),
     }),
   );
+
+/** The source a failure from the app's framework names: its code, a service or its storage. */
+const detailSource = ({ source }: { readonly source?: AppFailure["source"] }): CallFailureSource =>
+  source === "service" ? "upstream" : source === "storage" ? "storage" : "app";
+
+/**
+ * What a runtime's failure of a call names as its cause (`CallFailureSource`), read before
+ * `runtimeFailure` turns it into the caller's error, which can no longer tell them apart: a lost
+ * reply and the app's own exception are both `ToolCallFailed`.
+ */
+const failureSource = Match.type<CallError>().pipe(
+  Match.withReturnType<CallFailureSource>(),
+  Match.tagsExhaustive({
+    ProviderError: () => "upstream",
+    OpenapiResponseError: () => "upstream",
+    McpError: () => "upstream",
+    SkillLoadFailed: () => "upstream",
+    HostOperationFailed: detailSource,
+    HostEvaluationFailed: detailSource,
+    HostDeclarationInvalid: detailSource,
+    HostToolNotFound: () => "app",
+    HostOperationNotFound: () => "app",
+    HostKindMismatch: () => "app",
+    HostInputInvalid: () => "app",
+    HostOutputInvalid: () => "app",
+    WorkflowFailure: ({ reason }) =>
+      reason === "engine" || reason === "unavailable"
+        ? "runtime"
+        : reason === "approval"
+          ? "approval"
+          : reason === "credentials"
+            ? "other"
+            : "app",
+    DatabaseLimitExceeded: () => "storage",
+    HostToolBlocked: () => "approval",
+    HostToolApprovalRequired: () => "approval",
+    HostToolPolicyFailed: () => "approval",
+    RuntimeProtocolFailed: () => "runtime",
+    RuntimeBuildUnavailable: () => "runtime",
+    RuntimeProtocolUnsupported: () => "runtime",
+    HostRequestInvalid: () => "runtime",
+    HostAccountsInvalid: () => "other",
+    ElicitationFailed: () => "other",
+  }),
+);
+
+/** Tell the caller's observer, if any, what a call failed with (`CallFailureSources`). */
+const observeFailure = (source: CallFailureSource) =>
+  Effect.map(CallFailureSources, (observe) => observe?.(source));
 
 /**
  * The error a failed call reports to its caller, such as an agent. A call that may write, a
@@ -697,13 +765,14 @@ const runtimeFailure = (
  * work after the hand-off, such as saving an approval request. Its error records that, so it leads
  * with Executor's instruction not to repeat the call and is never offered as a retry. That includes
  * a refusal, such as invalid input or a denied approval, which the app's reply reports. A failure
- * before the host handed over any work, and every failure of a query, keep their own
- * classification.
+ * before the host handed over any work, and every failure of a call the app confirms only reads
+ * (`confirmedRead`), keep their own classification. A query only its upstream calls one, such as
+ * an MCP tool with `readOnlyHint`, may write like any other call.
  */
 const callFailure =
-  (kind: ToolKind | undefined, enteredApp: boolean) =>
+  (read: boolean, enteredApp: boolean) =>
   (failure: CallFailure): CallFailure =>
-    kind === "query" || !enteredApp
+    read || !enteredApp
       ? failure
       : Match.value(failure).pipe(
           Match.tagsExhaustive({
@@ -751,7 +820,7 @@ const summarizeTool = ({
 /** Live calls return completion or a durable approval request. Resume trusts the supplied SDK decision. */
 export const makeTools = (
   storage: ExecutorDatabase,
-  oauth: Pick<ReturnType<typeof makeOAuth>, "resolveSelected" | "renewRejected" | "usable">,
+  oauth: Pick<ReturnType<typeof makeOAuth>, "resolveSelected" | "renewRejected" | "usableAll">,
   clients: ReadonlyMap<string, FirstPartyOAuthClient>,
   runtime: Runtime,
   credentials: Credentials,
@@ -783,25 +852,34 @@ export const makeTools = (
   ) =>
     Schema.is(ProviderError)(error)
       ? appProviderFailure(state, error, renewal)
-      : evaluationFailure({ app: state.app.id, deployment: state.deployment.id }, error);
+      : evaluationFailure({ app: state.app.id, version: state.version.id }, error);
+  /** Fail with a catalog evaluation's typed error, telling the caller's observer its source. */
+  const failCatalog = (
+    state: InvocationSnapshot,
+    error: Effect.Error<ReturnType<typeof runtime.index>>,
+    renewal?: Renewal,
+  ) =>
+    observeFailure(failureSource(error)).pipe(
+      Effect.andThen(Effect.fail(catalogFailure(state, error, renewal))),
+    );
   /**
    * Run a tool, live or approved, and renew an account the service refuses. A 401 means the
    * service did not perform the refused request, but an earlier request in the same call may
-   * already have made changes. A query only reads, so it is repeated once with the renewed
-   * credentials, and a failed renewal is its failure. A call that may write is never repeated: the
-   * renewal, renewed or failed, comes after the call was dispatched, so it is reported with the
-   * call's failure rather than in its place.
+   * already have made changes. A call the app confirms only reads (`read`, see `confirmedRead`) is
+   * repeated once with the renewed credentials, and a failed renewal is its failure. A call that may
+   * write is never repeated: the renewal, renewed or failed, comes after the call was dispatched, so
+   * it is reported with the call's failure rather than in its place.
    */
-  const executeRenewing = <A, E, R>(
+  const executeRenewing = <A, E, R, R2>(
     state: InvocationSnapshot,
     context: InvocationContext,
-    kind: ToolKind | undefined,
+    read: Effect.Effect<boolean, never, R2>,
     execute: (context: InvocationContext) => Effect.Effect<Result.Result<A, E>, never, R>,
   ) =>
     Effect.gen(function* () {
       const result = yield* execute(context);
       if (Result.isSuccess(result)) return { result };
-      if (kind === "query") {
+      if (yield* read) {
         const renewed = yield* renewRefused(oauth, clients, state, context, result.failure);
         if (renewed === undefined) return { result };
         yield* Effect.annotateCurrentSpan("executor.tool.retry", "credentials_renewed");
@@ -810,12 +888,20 @@ export const makeTools = (
       const renewal = yield* renewOnce(state, context, result.failure);
       return { result, renewal };
     });
-  /** Runtime options that evaluate one invocation's catalog with its resolved accounts. */
+  /**
+   * Runtime options that evaluate one invocation's catalog with its resolved accounts. Every
+   * inspection of a build that can share its definitions asks for them: the catalog is the same
+   * either way, only smaller to send. Index reads list no schemas and ignore it.
+   */
   const inspection = (state: InvocationSnapshot, context: InvocationContext) => ({
     app: state.app.id,
-    build: state.deployment.build,
+    build: state.version.build,
+    hostApi: listings.hostApi(state.version),
     ...context,
     ...(workflows === undefined ? {} : { workflowControls: workflows(state) }),
+    ...(state.version.requirements.capabilities?.sharedDefinitions === true
+      ? { definitions: "shared" as const }
+      : {}),
   });
   /**
    * Evaluate a catalog and renew an account the service refuses while it is evaluated. Inspection
@@ -834,8 +920,8 @@ export const makeTools = (
         renewRefused(oauth, clients, state, context, error).pipe(
           Effect.flatMap((renewed) =>
             renewed === undefined
-              ? Effect.fail(catalogFailure(state, error))
-              : inspect(renewed).pipe(Effect.mapError((error) => catalogFailure(state, error))),
+              ? failCatalog(state, error)
+              : inspect(renewed).pipe(Effect.catch((error) => failCatalog(state, error))),
           ),
         ),
       ),
@@ -853,14 +939,14 @@ export const makeTools = (
     inspectRenewing(state, context, (context) =>
       read(
         inspection(state, context),
-        state.deployment.requirements.capabilities?.toolIndex === true,
-        state.deployment.requirements.capabilities?.scheduledTools === true,
+        state.version.requirements.capabilities?.toolIndex === true,
+        state.version.requirements.capabilities?.scheduledTools === true,
       ),
     );
   /** Inspect the live catalog for one tool, or all of it on builds without a tool index. */
   const inspectTool = (state: InvocationSnapshot, name: ToolName, context: InvocationContext) =>
     runtime.inspect(
-      state.deployment.requirements.capabilities?.toolIndex === true
+      state.version.requirements.capabilities?.toolIndex === true
         ? { ...inspection(state, context), tools: [name] }
         : inspection(state, context),
     );
@@ -878,10 +964,10 @@ export const makeTools = (
         if (failed !== undefined)
           return yield* Schema.is(ProviderError)(failed)
             ? appProviderFailure(state, failed)
-            : evaluationFailure({ app: state.app.id, deployment: state.deployment.id }, failed);
+            : evaluationFailure({ app: state.app.id, version: state.version.id }, failed);
         return yield* new ToolNotFound({
           app: state.app.id,
-          deployment: state.deployment.id,
+          version: state.version.id,
           tool: name,
         });
       });
@@ -900,7 +986,7 @@ export const makeTools = (
     inspectTool(state, name, context).pipe(
       Effect.catch((error) =>
         renewOnce(state, context, error).pipe(
-          Effect.flatMap((renewal) => Effect.fail(catalogFailure(state, error, renewal))),
+          Effect.flatMap((renewal) => failCatalog(state, error, renewal)),
         ),
       ),
       Effect.flatMap(found(state, name)),
@@ -1145,10 +1231,10 @@ export const makeTools = (
       );
       yield* Effect.annotateCurrentSpan({
         "executor.app.id": state.app.id,
-        "executor.deployment.id": state.deployment.id,
-        "executor.build.id": state.deployment.build,
+        "executor.deployment.id": state.version.id,
+        "executor.build.id": state.version.build,
       });
-      return { deployment: state.deployment.id, value: yield* readCatalog(state, context, read) };
+      return { version: state.version.id, value: yield* readCatalog(state, context, read) };
     });
   /** The invocation state a listing is read for, annotated on the caller's span. */
   const listed = (input: Parameters<typeof snapshot>[1]) =>
@@ -1156,8 +1242,8 @@ export const makeTools = (
       const state = yield* snapshot(db, input).pipe(Effect.withSpan("sdk.invocation.snapshot"));
       yield* Effect.annotateCurrentSpan({
         "executor.app.id": state.app.id,
-        "executor.deployment.id": state.deployment.id,
-        "executor.build.id": state.deployment.build,
+        "executor.deployment.id": state.version.id,
+        "executor.build.id": state.version.build,
       });
       return state;
     });
@@ -1167,12 +1253,8 @@ export const makeTools = (
     (state: InvocationSnapshot) =>
     ({ tools, routers }: Effect.Success<ReturnType<typeof runtime.inspect>>): ToolListing => ({
       catalog: {
-        deployment: state.deployment.id,
-        accounts: scopedSelection(
-          state.deployment.requirements.accounts,
-          state.accounts,
-          state.scope,
-        ),
+        version: state.version.id,
+        accounts: scopedSelection(state.version.requirements.accounts, state.accounts, state.scope),
       },
       routers,
       items: [...tools]
@@ -1180,7 +1262,7 @@ export const makeTools = (
         .map((tool) => ({
           ...tool,
           app: state.app.id,
-          deployment: state.deployment.id,
+          version: state.version.id,
           name: ToolName.make(tool.name),
         })),
     });
@@ -1189,6 +1271,42 @@ export const makeTools = (
     inspectRenewing(state, context, (context) => runtime.inspect(inspection(state, context))).pipe(
       Effect.map(toListing(state)),
     );
+  /**
+   * Whether the app confirms that a tool only reads: its kept listing names the tool a query of a
+   * kind the app's code or the tool's protocol fixes (`kindConfirmed`), not one only an upstream
+   * claims, such as an MCP server's `readOnlyHint`. Only a call named a query and confirmed here
+   * keeps a read's advice to repeat it after it fails, and only such a call is repeated with renewed
+   * credentials. The caller's kind is its own claim and confirms nothing. It comes only from a
+   * listing already kept (`listings.kept`): evaluating the catalog after a call failed would run
+   * the app's code again, and its writes, only to word the failure. The listing kept in this
+   * process is taken before the call hands over its work, since a cache change the call makes
+   * forgets it; it is checked, and one kept beyond this process is read, only once the call failed
+   * after the hand-off. A tool the kept listing does not confirm, or no kept listing, is not
+   * confirmed.
+   */
+  const readOf = (state: InvocationSnapshot, name: ToolName, kind: ToolKind | undefined) =>
+    kind === "query"
+      ? listings.kept(state).pipe(
+          Effect.orElseSucceed(() => Effect.succeed<ToolListing | undefined>(undefined)),
+          Effect.flatMap((kept) =>
+            Effect.cached(
+              kept.pipe(
+                Effect.map(
+                  (listing) =>
+                    listing?.items.some(
+                      (tool) =>
+                        tool.name === name && tool.readOnly === true && tool.kindConfirmed === true,
+                    ) === true,
+                ),
+                Effect.tap((confirmed) =>
+                  Effect.annotateCurrentSpan("executor.tool.read_confirmed", confirmed),
+                ),
+                Effect.withSpan("sdk.tools.read_confirmed"),
+              ),
+            ),
+          ),
+        )
+      : Effect.succeed(Effect.succeed(false));
   /**
    * The listing a call that names no kind evaluates when none is kept. Evaluating the catalog runs
    * the app's code, which may write before it fails, and the call may write, so it is evaluated
@@ -1199,7 +1317,7 @@ export const makeTools = (
     runtime.inspect(inspection(state, context)).pipe(
       Effect.catch((error) =>
         renewOnce(state, context, error).pipe(
-          Effect.flatMap((renewal) => Effect.fail(catalogFailure(state, error, renewal))),
+          Effect.flatMap((renewal) => failCatalog(state, error, renewal)),
         ),
       ),
       Effect.map(toListing(state)),
@@ -1218,16 +1336,19 @@ export const makeTools = (
     accountNeedingReconnect: (input: { app: AppId; accounts: AppAccounts }) =>
       Effect.gen(function* () {
         const state = yield* snapshot(db, input);
-        for (const { required, accounts } of state.selections)
-          for (const account of accounts) {
-            const usable = yield* oauth.usable(account, required.definition).pipe(Effect.result);
-            if (Result.isFailure(usable)) {
-              if (!Schema.is(OAuthReconnectRequired)(usable.failure))
-                return yield* Effect.fail(usable.failure);
-              yield* accountsOutcome("reconnect");
-              return account.id;
-            }
-          }
+        const usable = yield* oauth
+          .usableAll(
+            state.selections.flatMap(({ required, accounts }) =>
+              accounts.map((account) => ({ account, provider: required.definition })),
+            ),
+          )
+          .pipe(Effect.result);
+        if (Result.isFailure(usable)) {
+          if (!Schema.is(OAuthReconnectRequired)(usable.failure))
+            return yield* Effect.fail(usable.failure);
+          yield* accountsOutcome("reconnect");
+          return usable.failure.account;
+        }
         yield* accountsOutcome("ready");
         return undefined;
       }).pipe(
@@ -1243,23 +1364,28 @@ export const makeTools = (
       ),
     /**
      * Page through the app's evaluated catalog. The whole listing is evaluated once and, with a
-     * listing store, reused across pages and requests for identical inputs.
+     * listing store, reused across pages and requests for identical inputs. A page ends at its
+     * limit and, unless the caller asks for unbounded pages, before the tool that would take its
+     * JSON past `toolPageChars`.
      */
     list: (input: Parameters<Executor["tools"]["list"]>[0], options?: ToolListOptions) =>
       Effect.gen(function* () {
         const state = yield* listed(input);
         const listing = yield* listings.read(state, listingOf(state), options);
         // Pages share the listing's item objects, so a caller can recognise a kept listing.
-        const cursor: string | undefined = input.cursor;
-        const after =
-          cursor === undefined ? listing.items : listing.items.filter((tool) => tool.name > cursor);
-        const selected = after.slice(0, input.limit ?? 2_000);
+        const start = pageStart(listing, input.cursor);
+        const selected = yield* pageTools(
+          listing,
+          start,
+          input.limit ?? 2_000,
+          options?.unboundedPages === true ? undefined : toolPageChars,
+        );
         const last = selected.at(-1);
         return {
           ...listing.catalog,
           routers: listing.routers,
           items: selected,
-          ...(last !== undefined && after.length > selected.length
+          ...(last !== undefined && listing.items.length > start + selected.length
             ? { next: Cursor.make(last.name) }
             : {}),
         };
@@ -1274,13 +1400,14 @@ export const makeTools = (
         const found = yield* listings.searchable(state, listingOf(state), options);
         return {
           listing: found.listing,
-          deployment: state.deployment.id,
+          version: state.version.id,
           accounts: scopedSelection(
-            state.deployment.requirements.accounts,
+            state.version.requirements.accounts,
             state.accounts,
             state.scope,
           ),
           routers: found.routers.filter((router) => router.error !== undefined),
+          ...(found.stale === undefined ? {} : { stale: found.stale }),
         };
       }).pipe(Effect.withSpan("sdk.tools.searchable")),
     /**
@@ -1290,14 +1417,14 @@ export const makeTools = (
     scheduled: (input: Parameters<Executor["tools"]["list"]>[0]) =>
       Effect.gen(function* () {
         const {
-          deployment,
+          version,
           value: { tools },
         } = yield* evaluate(input, (options, _toolIndex, scheduled) =>
           runtime.inspect(scheduled ? { ...options, scheduled: true } : options),
         );
-        // Callers that act on the result can require that this deployment is still active.
+        // Callers that act on the result can require that this version is still active.
         return {
-          deployment,
+          version,
           items: tools.flatMap((tool) =>
             (tool.schedules ?? []).map((schedule) => ({
               ...schedule,
@@ -1340,7 +1467,7 @@ export const makeTools = (
         if (failed !== undefined)
           return yield* Schema.is(ProviderError)(failed)
             ? appProviderFailure(state, failed)
-            : evaluationFailure({ app: state.app.id, deployment: state.deployment.id }, failed);
+            : evaluationFailure({ app: state.app.id, version: state.version.id }, failed);
         yield* Effect.annotateCurrentSpan("executor.tools.source", "live");
         const context = yield* resolve(state, resolveAccount).pipe(
           Effect.withSpan("sdk.accounts.resolve"),
@@ -1349,7 +1476,7 @@ export const makeTools = (
         return {
           ...tool,
           app: state.app.id,
-          deployment: state.deployment.id,
+          version: state.version.id,
           name: ToolName.make(tool.name),
         };
       }).pipe(Effect.withSpan("sdk.tools.get")),
@@ -1382,11 +1509,11 @@ export const makeTools = (
           Effect.withSpan("sdk.accounts.resolve"),
           Effect.provideService(GrantReadAhead, grants),
         );
-        const identity = { app: state.app.id, deployment: state.deployment.id, tool: parsed.tool };
+        const identity = { app: state.app.id, version: state.version.id, tool: parsed.tool };
         yield* Effect.annotateCurrentSpan({
           "executor.app.id": state.app.id,
-          "executor.deployment.id": state.deployment.id,
-          "executor.build.id": state.deployment.build,
+          "executor.deployment.id": state.version.id,
+          "executor.build.id": state.version.build,
         });
         // Set by the host when it hands this call's work to the app's code: catalog reads for its
         // kind, and the call itself.
@@ -1396,10 +1523,12 @@ export const makeTools = (
             enteredApp = true;
           },
         };
-        // The caller's kind decides how a failure is reported and whether a refused call is
-        // repeated. For a call that names none, the catalog only names the kind it is dispatched
-        // with: reading the catalog ran the app's code, so the call's outcome stays unknown.
+        // The caller's kind, confirmed by the app for a query (`confirmedRead`), decides how a
+        // failure is reported and whether a refused call is repeated. For a call that names none,
+        // the catalog only names the kind it is dispatched with: reading the catalog ran the app's
+        // code, so the call's outcome stays unknown.
         const named = parsed.kind;
+        const read = yield* readOf(state, parsed.tool, named);
         // Every failure from here, the app's or Executor's own, passes through `callFailure` once.
         return yield* Effect.gen(function* () {
           const kind = yield* kindOf(state, context, parsed.tool, named);
@@ -1410,8 +1539,9 @@ export const makeTools = (
               return runtime.call({
                 app: state.app.id,
                 ...(workflows === undefined ? {} : { workflowControls: workflows(state) }),
-                build: state.deployment.build,
-                database: ownsDatabase(state.deployment.requirements),
+                build: state.version.build,
+                hostApi: listings.hostApi(state.version),
+                database: ownsDatabase(state.version.requirements),
                 ...context,
                 tool: parsed.tool,
                 ...(kind === undefined ? {} : { kind }),
@@ -1426,7 +1556,7 @@ export const makeTools = (
               }),
               Effect.result,
             );
-          const { result, renewal } = yield* executeRenewing(state, context, named, execute);
+          const { result, renewal } = yield* executeRenewing(state, context, read, execute);
           // The tool is named once the app has answered for it: a name it lacks is the caller's text.
           if (
             Result.isSuccess(result) ||
@@ -1456,34 +1586,41 @@ export const makeTools = (
               options?.issuer,
             );
           }
+          yield* observeFailure(failureSource(result.failure));
           return yield* Effect.fail(runtimeFailure(identity, state, renewal)(result.failure));
         }).pipe(
-          Effect.mapError((failure) =>
-            // Only a query's renewal fails a call itself (`executeRenewing`), and a query keeps
-            // its classification. A missing account is the host's finding while it resolves
-            // accounts, before any of the app's code runs for it.
+          Effect.catch((failure) =>
+            // Only a confirmed read's renewal fails a call itself (`executeRenewing`), and a
+            // confirmed read keeps its classification. A missing account is the host's finding
+            // while it resolves accounts, before any of the app's code runs for it.
             failure._tag === "OAuthReconnectRequired" ||
             failure._tag === "OAuthRenewalFailed" ||
-            failure._tag === "AccountRequired"
-              ? failure
-              : callFailure(named, enteredApp)(failure),
+            failure._tag === "AccountRequired" ||
+            !enteredApp
+              ? Effect.fail(failure)
+              : Effect.flatMap(read, (read) => Effect.fail(callFailure(read, enteredApp)(failure))),
           ),
           // A defect after the hand-off, such as in Executor's own code, does not establish what
           // the app's code did either. A call that may write reports it as a failure that records
           // the write, and the defect is still reported as one. Interruption is unchanged.
           Effect.catchCause((cause) =>
-            named === "query" || !enteredApp || !Cause.hasDies(cause) || Cause.hasInterrupts(cause)
+            !enteredApp || !Cause.hasDies(cause) || Cause.hasInterrupts(cause)
               ? Effect.failCause(cause)
-              : reportDefect(cause).pipe(
-                  Effect.andThen(
-                    Effect.fail(
-                      new ToolCallFailed({
-                        ...identity,
-                        reason: "Executor failed unexpectedly while handling this tool call.",
-                        mayHaveWritten: true,
-                      }),
-                    ),
-                  ),
+              : Effect.flatMap(read, (read) =>
+                  read
+                    ? Effect.failCause(cause)
+                    : reportDefect(cause).pipe(
+                        Effect.andThen(observeFailure("runtime")),
+                        Effect.andThen(
+                          Effect.fail(
+                            new ToolCallFailed({
+                              ...identity,
+                              reason: "Executor failed unexpectedly while handling this tool call.",
+                              mayHaveWritten: true,
+                            }),
+                          ),
+                        ),
+                      ),
                 ),
           ),
           Effect.provideService(AppCodeEntered, appCode),
@@ -1508,7 +1645,7 @@ export const makeTools = (
                 // The saved identities name the accounts; their credentials are resolved again.
                 const checked = yield* snapshot(db, {
                   app: saved.app,
-                  deployment: saved.deployment,
+                  version: saved.version,
                   accounts: invocationAccounts(saved),
                 }).pipe(
                   Effect.withSpan("sdk.invocation.snapshot"),
@@ -1547,8 +1684,8 @@ export const makeTools = (
                 return yield* Effect.gen(function* () {
                   yield* Effect.annotateCurrentSpan({
                     "executor.app.id": saved.app,
-                    "executor.deployment.id": saved.deployment,
-                    "executor.build.id": state.deployment.build,
+                    "executor.deployment.id": saved.version,
+                    "executor.build.id": state.version.build,
                     "executor.tool.name": saved.tool,
                     "executor.approval.id": input.requestId,
                   });
@@ -1557,6 +1694,9 @@ export const makeTools = (
                   );
                   // Set by the host when it hands this call's work to the app's code, as for a call.
                   let enteredApp = false;
+                  // As for a call, the saved (caller's) kind counts as a read only when the app
+                  // confirms it.
+                  const read = yield* readOf(state, saved.tool, saved.kind);
                   // As for a call, every failure from here passes through `callFailure` once, so a
                   // resumed call that may write reports what it failed with as possibly written.
                   return yield* Effect.gen(function* () {
@@ -1570,8 +1710,9 @@ export const makeTools = (
                           ...(workflows === undefined
                             ? {}
                             : { workflowControls: workflows(state) }),
-                          build: state.deployment.build,
-                          database: ownsDatabase(state.deployment.requirements),
+                          build: state.version.build,
+                          hostApi: listings.hostApi(state.version),
+                          database: ownsDatabase(state.version.requirements),
                           ...context,
                           tool: saved.tool,
                           ...(kind === undefined ? {} : { kind }),
@@ -1589,22 +1730,24 @@ export const makeTools = (
                         }),
                         Effect.result,
                       );
-                    // As for a call, the saved (caller's) kind decides whether a refused call is
-                    // repeated; the catalog's only sets the dispatched kind.
+                    // As for a call, the saved (caller's) kind, confirmed by the app, decides whether
+                    // a refused call is repeated; the catalog's only sets the dispatched kind.
                     const { result, renewal } = yield* executeRenewing(
                       state,
                       context,
-                      saved.kind,
+                      read,
                       execute,
                     );
-                    if (Result.isFailure(result))
+                    if (Result.isFailure(result)) {
+                      yield* observeFailure(failureSource(result.failure));
                       return yield* Effect.fail(
                         runtimeFailure(
-                          { app: saved.app, deployment: saved.deployment, tool: saved.tool },
+                          { app: saved.app, version: saved.version, tool: saved.tool },
                           state,
                           renewal,
                         )(result.failure),
                       );
+                    }
                     const value = result.success;
                     if (toolError)
                       yield* Effect.annotateCurrentSpan({
@@ -1617,12 +1760,15 @@ export const makeTools = (
                       ...(toolError ? { toolError: true as const } : {}),
                     };
                   }).pipe(
-                    Effect.mapError((failure) =>
+                    Effect.catch((failure) =>
                       failure._tag === "OAuthReconnectRequired" ||
                       failure._tag === "OAuthRenewalFailed" ||
-                      failure._tag === "AccountRequired"
-                        ? failure
-                        : callFailure(saved.kind, enteredApp)(failure),
+                      failure._tag === "AccountRequired" ||
+                      !enteredApp
+                        ? Effect.fail(failure)
+                        : Effect.flatMap(read, (read) =>
+                            Effect.fail(callFailure(read, enteredApp)(failure)),
+                          ),
                     ),
                     Effect.provideService(AppCodeEntered, {
                       entered: () => {

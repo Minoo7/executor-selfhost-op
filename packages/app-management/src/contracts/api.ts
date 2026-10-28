@@ -1,9 +1,11 @@
+import { withLegacyKeys } from "@executor-js/utils/legacy-keys";
 import {
   SourceDisplayEntries,
   SourceDisplayFile,
   SourceDisplayFileQuery,
 } from "./source-display.ts";
 import { ApiError } from "@executor-js/utils/api-error";
+import { UserFacingError } from "@executor-js/utils/user-facing-error";
 /** Shared app wire contracts; browser imports never load HTTP route or Git adapters. */
 import { Context, Schema } from "effect";
 import {
@@ -11,11 +13,11 @@ import {
   AppSlugTaken,
   AppNotFound,
   AppNotDeployed,
-  DeploymentNotFound,
-  AppDeploymentChanged,
+  VersionNotFound,
+  AppVersionChanged,
   AccountNotFound,
   AccountSelectionInvalid,
-  DeploymentBuildFailed,
+  VersionBuildFailed,
   BuildMemoryExceeded,
   CommittedSource,
   sourceErrors,
@@ -23,6 +25,7 @@ import {
   StorageError,
   PublicationReadiness,
   RegistryError,
+  RequestRejection,
 } from "@executor-js/sdk/core";
 export * from "./framework.ts";
 
@@ -41,6 +44,28 @@ export const AppAccessDenied = ApiError.define({
       : "This caller may not perform this app operation, or cannot access this app.",
 });
 export type AppAccessDenied = typeof AppAccessDenied.Type;
+/**
+ * A client released before wire revisions asked to remove a listing by the short name it is shown,
+ * `@acme/notes` for `@acme.executor.community/notes`. It states no commit, so the name cannot be
+ * bound to the listing it was shown. Those clients print an error their contract lacks as the host
+ * states it.
+ */
+export const FullListingNameRequired = UserFacingError.define({
+  tag: "FullListingNameRequired",
+  status: 400,
+  fields: { name: PackageName, fullName: PackageName },
+  recorded: () =>
+    "A client without a wire revision asked to remove a public listing by its short name.",
+  presentation: ({ name, fullName }) => ({
+    title: "Remove this listing by its full name",
+    description: `${name} is the short form of a public listing's name. It selects whichever listing holds that name when the request arrives, which may not be the one that was listed, so nothing was removed.`,
+    recovery: {
+      action: `Remove ${fullName} instead. Releases up to 2.0.0-beta.15 cannot send that name: install the current release first with npm i -g executor@beta --include=optional.`,
+      instructions: `The request stated no executor-wire-revision header, so the host lists public packages to this client by short names such as ${name} and removes none by them. Run executor apps unpublish --package ${fullName}. If the CLI rejects that name, update it first with npm i -g executor@beta --include=optional. API callers send executor-wire-revision: 1.`,
+    },
+  }),
+});
+export type FullListingNameRequired = typeof FullListingNameRequired.Type;
 /** Expected operation failures are shared unchanged across the product transports. */
 export const appOperationErrors = [
   StorageError,
@@ -49,13 +74,13 @@ export const appOperationErrors = [
   AppAccessDenied,
   AppNotFound,
   AppNotDeployed,
-  DeploymentNotFound,
+  VersionNotFound,
   AppNameTaken,
   AppSlugTaken,
-  AppDeploymentChanged,
+  AppVersionChanged,
   AccountNotFound,
   AccountSelectionInvalid,
-  DeploymentBuildFailed,
+  VersionBuildFailed,
   BuildMemoryExceeded,
 ] as const;
 /** Wire errors remain typed in browser, CLI, and agent clients. */
@@ -98,7 +123,7 @@ import {
   AppId,
   AppName,
   DeployedApp,
-  DeploymentMetadata,
+  VersionMetadata,
   GitCommit,
   OwnerId,
   SourceCommit,
@@ -147,7 +172,7 @@ export const appManagementApi = <I extends HttpApiMiddleware.AnyId, S>(
   const tenant =
     prefix === "/api" ? Schema.Struct({}) : Schema.Struct({ organization: Schema.NonEmptyString });
   const app = Schema.Struct({ ...tenant.fields, app: AppId });
-  return HttpApi.make("app-management").add(
+  const api = HttpApi.make("app-management").add(
     HttpApiGroup.make("appManagement")
       .add(
         HttpApiEndpoint.get("list", "/apps", {
@@ -222,11 +247,13 @@ export const appManagementApi = <I extends HttpApiMiddleware.AnyId, S>(
             Schema.Struct({ files: SourceFiles, commit: Schema.optional(Schema.Never) }),
             Schema.Struct({ commit: SourceCommit, files: Schema.optional(Schema.Never) }),
           ]),
-          success: Schema.Struct({ app: DeployedApp, deployment: DeploymentMetadata }),
+          success: Schema.Struct({ app: DeployedApp, version: VersionMetadata }).pipe(
+            withLegacyKeys({ version: "deployment" }),
+          ),
           error: appOperationErrors,
         }).annotate(
           OpenApi.Description,
-          "Deploy complete files or an immutable Git commit without changing the working branch. App identity, data, and compatible account selections are retained. Returns the app and the new deployment's metadata; the files are not echoed.",
+          "Deploy complete files or an immutable Git commit without changing the working branch. App identity, data, and compatible account selections are retained. Returns the app and the new version's metadata; the files are not echoed.",
         ),
         HttpApiEndpoint.post("copy", "/apps/copies", {
           params: tenant,
@@ -278,7 +305,7 @@ export const appManagementApi = <I extends HttpApiMiddleware.AnyId, S>(
           params: tenant,
           payload: Schema.Struct({ package: PackageName }),
           success: Schema.Struct({ name: PackageName }),
-          error: appOperationErrors,
+          error: [...appOperationErrors, FullListingNameRequired],
         }).annotate(
           OpenApi.Description,
           "Remove a public listing. Existing installed copies remain independent and usable.",
@@ -287,4 +314,5 @@ export const appManagementApi = <I extends HttpApiMiddleware.AnyId, S>(
       .prefix(prefix)
       .middleware(access),
   );
+  return api.middleware(RequestRejection);
 };

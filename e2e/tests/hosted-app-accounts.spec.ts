@@ -28,6 +28,12 @@ import {
 } from "../support/hosted-app-accounts.ts";
 import { scenarios } from "../test-plan.ts";
 import { McpClient } from "../support/mcp-client.ts";
+import { siteless } from "../support/failure-site.ts";
+
+/** A tool result's text content. */
+const TextContent = Schema.Array(
+  Schema.Struct({ type: Schema.Literal("text"), text: Schema.String }),
+);
 
 const Failure = Schema.Struct({ _tag: Schema.String });
 const AccountDetail = Schema.Struct({ account: Resource });
@@ -101,7 +107,7 @@ layer(HostedLive, { excludeTestServices: true })("Hosted app accounts", (it) => 
         expect((yield* body(Failure, ownerCall))._tag).toBe("AccountRequired");
         expect(
           (yield* api.request(actors.member, "POST", `${path}/tools/call`, {
-            deployment: "dpl_missing_opened_version",
+            version: "dpl_missing_opened_version",
             tool: "who",
             kind: "query",
             input: {},
@@ -111,7 +117,7 @@ layer(HostedLive, { excludeTestServices: true })("Hosted app accounts", (it) => 
           (yield* api.request(
             actors.member,
             "GET",
-            `${path}/tools?deployment=dpl_missing_opened_version`,
+            `${path}/tools?version=dpl_missing_opened_version`,
           )).status,
         ).toBe(404);
         expect((yield* api.request(actors.member, "GET", path)).body).not.toHaveProperty(
@@ -613,7 +619,12 @@ export default defineApp({ user: { accounts: { other } } }, {});`,
           const refused = yield* skills(step, input);
           expect(refused.isError, JSON.stringify(refused)).toBe(true);
           // The skills tool's error text names AccountChoiceUnsupported's code and status.
-          expect(refused.content).toEqual([{ type: "text", text: accountChoiceUnsupported }]);
+          expect(
+            Schema.decodeUnknownSync(TextContent)(refused.content).map((item) => ({
+              ...item,
+              text: siteless(item.text),
+            })),
+          ).toEqual([{ type: "text", text: accountChoiceUnsupported }]);
         }
         const listed = yield* skills("List the app's skills", { app: app.slug });
         expect(listed.isError, JSON.stringify(listed)).not.toBe(true);
@@ -641,12 +652,12 @@ export default defineApp({ user: { accounts: { other } } }, {});`,
       Effect.gen(function* () {
         const { api, actors, app, path, mailA, connect } = yield* appAccountsFixture;
         const mcp = yield* McpClient;
-        const SkillRead = Schema.Struct({ deployment: Schema.String, content: Schema.String });
+        const SkillRead = Schema.Struct({ version: Schema.String, content: Schema.String });
         const read = (query: string) =>
           api.request(actors.member, "GET", `${path}/skills/selected-account${query}`);
         const first = yield* body(SkillRead, yield* read(""));
         expect(first.content).toContain(mailA);
-        // A newer deployment renames the requirement the skill's text depends on.
+        // A newer version renames the requirement the skill's text depends on.
         const renamed = appAccountsSource
           .replace("accounts: { service, extra:", "accounts: { mail: service, extra:")
           .replaceAll("accounts.service.", "accounts.mail.");
@@ -663,19 +674,19 @@ export default defineApp({ user: { accounts: { other } } }, {});`,
           requirement: "mail",
         });
         const current = yield* body(SkillRead, yield* read(""));
-        expect(current.deployment).not.toBe(first.deployment);
+        expect(current.version).not.toBe(first.version);
         expect(current.content).toContain(renamedMail);
         expect(current.content).not.toContain(mailA);
-        // The earlier deployment's skill still reads with that deployment's own requirement, whose
+        // The earlier version's skill still reads with that version's own requirement, whose
         // link to mailA remains.
-        const pinned = yield* read(`?deployment=${first.deployment}`);
+        const pinned = yield* read(`?version=${first.version}`);
         expect(pinned.status, JSON.stringify(pinned.body)).toBe(200);
         expect(yield* body(SkillRead, pinned)).toMatchObject({
-          deployment: first.deployment,
+          version: first.version,
           content: expect.stringContaining(mailA),
         });
 
-        // MCP reads pinned to the earlier deployment resolve the same way.
+        // MCP reads pinned to the earlier version resolve the same way.
         const issued = yield* api.request(actors.member, "POST", "/api/auth/api-key/create", {
           name: "Historical skill",
         });
@@ -692,11 +703,11 @@ export default defineApp({ user: { accounts: { other } } }, {});`,
         const client = yield* mcp.connect(key.key, "historical-skill", {
           organization: actors.organization.id,
         });
-        const viaMcp = yield* client.use("Read the earlier deployment's skill", (client, signal) =>
+        const viaMcp = yield* client.use("Read the earlier version's skill", (client, signal) =>
           client.callTool(
             {
               name: "skills",
-              arguments: { app: app.slug, name: "selected-account", deployment: first.deployment },
+              arguments: { app: app.slug, name: "selected-account", version: first.version },
             },
             undefined,
             { signal },
@@ -704,7 +715,7 @@ export default defineApp({ user: { accounts: { other } } }, {});`,
         );
         expect(viaMcp.isError, JSON.stringify(viaMcp)).not.toBe(true);
         expect(viaMcp.structuredContent).toMatchObject({
-          deployment: first.deployment,
+          version: first.version,
           content: expect.stringContaining(mailA),
         });
       }).pipe(Effect.provide(McpClient.layer)),

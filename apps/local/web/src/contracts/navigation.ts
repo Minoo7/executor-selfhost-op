@@ -1,4 +1,4 @@
-import { AppView } from "@executor-js/ui/contracts/dashboard";
+import { AppView, AppViewFromUrl } from "@executor-js/ui/contracts/dashboard";
 import { AccountId } from "@executor-js/sdk";
 import { Option, Schema } from "effect";
 
@@ -20,7 +20,7 @@ const text = Schema.decodeUnknownOption(Schema.NonEmptyString);
 
 /** Ignore unsupported views and empty tool names, preserving existing deep links. */
 export function parseAppSearch(search: Record<string, unknown>): AppSearch {
-  const view = Schema.decodeUnknownOption(AppView)(search.view);
+  const view = Schema.decodeUnknownOption(AppViewFromUrl)(search.view);
   const tool = text(search.tool);
   return {
     view: Option.getOrUndefined(view),
@@ -55,7 +55,7 @@ export function localPageTitle(pathname: string): string {
   if (section === "account-connect") return "Connect account";
   if (section === "api" && item === "oauth") return "Connecting account";
   if (section === "apps") {
-    if (item === "add") return action === "custom" ? "Add custom app" : "Add app";
+    if (item === "add") return "App catalog";
     if (action === "delete") return "Delete app";
     if (action === "setup") return "Accounts";
     return item ? "App" : "Apps";

@@ -1,9 +1,11 @@
 /**
  * Account checks run by the apps that use an account, as the product names them. Each app's active
- * deployment runs its provider's check with the account's current credentials; results are kept
+ * version runs its provider's check with the account's current credentials; results are kept
  * per account and app.
  */
 import { Clock, Effect, Match, Option, Redacted, Result, Schema } from "effect";
+import type { HostApi } from "../contracts/executor.ts";
+import { versionHostApi } from "./declarations.ts";
 import {
   AccountInfo,
   HostOperationFailed,
@@ -25,7 +27,7 @@ import {
 } from "../contracts/shared.ts";
 import { AppNotFound } from "../contracts/apps.ts";
 import { type AccountCredential, invocationAccount, validateFields } from "./provider.ts";
-import { StoredDeployment, type StoredAccount } from "../contracts/storage.ts";
+import { StoredVersion, type StoredAccount } from "../contracts/storage.ts";
 import { storedAccount } from "./accounts.ts";
 import { query, type Query } from "./database.ts";
 import type { makeOAuth } from "./oauth.ts";
@@ -58,6 +60,7 @@ type HealthAccount = Pick<StoredAccount, "id" | "provider" | "credentialGenerati
 type CheckRow = {
   readonly account: string;
   readonly app: string;
+  /** The version the check ran on; storage keeps the column's former name. */
   readonly deployment: string;
   readonly credentialGeneration: number;
   readonly status: string;
@@ -67,7 +70,7 @@ type CheckRow = {
   readonly message: string | null;
 };
 
-/** The slot whose provider check covers this account in the app's active deployment. */
+/** The slot whose provider check covers this account in the app's active version. */
 const checkedSlot = (app: App, account: Pick<HealthAccount, "provider">) =>
   Object.entries(app.requirements.accounts)
     .filter(([, required]) => required.provider === account.provider && required.health === true)
@@ -123,6 +126,7 @@ export const makeAccountHealth = (
   oauth: OAuth,
   clients: ReadonlyMap<string, FirstPartyOAuthClient>,
   listApps: ListApps,
+  hostApi: HostApi | undefined,
 ) => {
   /** One account's health from the apps that use it and its recorded checks. */
   const project = (account: HealthAccount, apps: readonly App[], rows: readonly CheckRow[]) =>
@@ -148,7 +152,7 @@ export const makeAccountHealth = (
                     ),
                     checkedAt: row.checkedAt,
                     current:
-                      row.deployment === app.activeDeployment &&
+                      row.deployment === app.activeVersion &&
                       row.credentialGeneration === account.credentialGeneration,
                     ...(row.message === null ? {} : { message: row.message }),
                   };
@@ -205,13 +209,13 @@ export const makeAccountHealth = (
   const checkApp = (app: App, account: StoredAccount) =>
     Effect.gen(function* () {
       const target = checkedSlot(app, account);
-      if (target === undefined || app.activeDeployment === null) return;
-      const deploymentId = app.activeDeployment;
+      if (target === undefined || app.activeVersion === null) return;
+      const versionId = app.activeVersion;
       const row = yield* query(() =>
-        db.findFirst("deployments", { where: (b) => b("id", "=", deploymentId) }),
+        db.findFirst("deployments", { where: (b) => b("id", "=", versionId) }),
       );
       if (row === null) return;
-      const deployment = yield* Schema.decodeUnknownEffect(StoredDeployment)(row).pipe(
+      const version = yield* Schema.decodeUnknownEffect(StoredVersion)(row).pipe(
         Effect.mapError(() => new StorageError()),
       );
       const startedAt = yield* Clock.currentTimeMillis;
@@ -222,7 +226,8 @@ export const makeAccountHealth = (
       const attempt = (credential: AccountCredential) =>
         runtime.checkAccount({
           app: app.id,
-          build: deployment.build,
+          build: version.build,
+          hostApi: versionHostApi(hostApi, version),
           requirement: target.slot,
           deadline,
           accounts: Redacted.make(
@@ -261,7 +266,7 @@ export const makeAccountHealth = (
             );
       const checkedAt = new Date(startedAt);
       const state = {
-        deployment: deployment.id,
+        deployment: version.id,
         credentialGeneration: account.credentialGeneration,
         status,
         checkedAt,
@@ -302,8 +307,8 @@ export const makeAccountHealth = (
       });
       if (app === undefined) return yield* new AppNotFound({ app: input.app });
       const target = checkedSlot(app, { provider: input.provider });
-      const deploymentId = app.activeDeployment;
-      if (target === undefined || deploymentId === null) return null;
+      const versionId = app.activeVersion;
+      if (target === undefined || versionId === null) return null;
       const fields = yield* validateFields(
         input.provider,
         target.required.definition,
@@ -311,17 +316,18 @@ export const makeAccountHealth = (
         input.fields,
       ).pipe(Effect.flatMap(decodeFields));
       const row = yield* query(() =>
-        db.findFirst("deployments", { where: (b) => b("id", "=", deploymentId) }),
+        db.findFirst("deployments", { where: (b) => b("id", "=", versionId) }),
       );
       if (row === null) return null;
-      const deployment = yield* Schema.decodeUnknownEffect(StoredDeployment)(row).pipe(
+      const version = yield* Schema.decodeUnknownEffect(StoredVersion)(row).pipe(
         Effect.mapError(() => new StorageError()),
       );
       const deadline = (yield* Clock.currentTimeMillis) + checkMillis - reportMillis;
       const outcome = yield* runtime
         .checkAccount({
           app: app.id,
-          build: deployment.build,
+          build: version.build,
+          hostApi: versionHostApi(hostApi, version),
           requirement: target.slot,
           deadline,
           accounts: Redacted.make(

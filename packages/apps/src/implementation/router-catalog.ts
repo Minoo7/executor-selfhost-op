@@ -20,6 +20,7 @@ import {
   parseMcpError,
   parseSkillLoadFailed,
 } from "./failure-detail.ts";
+import { PartialListing } from "./account-router.ts";
 import { parseProviderError } from "./provider-error.ts";
 import { joinPath, mergeMeta } from "./router.ts";
 import { skillFromFiles } from "./skill-files.ts";
@@ -131,6 +132,8 @@ const summaryFields = (
     description: operation.description ?? `${readOnly ? "Query" : "Mutate"} ${name}`,
     ...(operation.title === undefined ? {} : { title: operation.title }),
     readOnly,
+    // A declared operation's kind is the app's own, or its protocol's, such as an HTTP method.
+    kindConfirmed: true,
     annotations: { ...operation.annotations, readOnlyHint: readOnly },
   };
 };
@@ -197,6 +200,34 @@ export const fixedRouter = (
   resolve: (name) => Effect.succeed(Object.hasOwn(operations, name) ? operations[name] : undefined),
 });
 
+/** A described tool, its schemas read as objects of entries; `DescribedTools` checks their values. */
+const ListedEntries = Schema.Record(Schema.String, Schema.Unknown);
+const ListedTool = HostedTool.mapFields((fields) => ({
+  ...fields,
+  inputSchema: ListedEntries,
+  outputSchema: Schema.optionalKey(ListedEntries),
+  _meta: Schema.optionalKey(ListedEntries),
+}));
+const isJson = Schema.is(Schema.Json);
+/**
+ * Whether described tools' schemas hold only JSON, as `HostedTool` requires, checked in one call.
+ * `Schema.Json`'s check visits each object once per call, and routers give many tools the same
+ * definition objects in their schemas' `$defs`, so checking each tool apart would walk the shared
+ * definitions once for every tool that reaches them: about 384 million characters' worth for
+ * Stripe's description.
+ */
+const jsonTools = (
+  tools: ReadonlyArray<typeof ListedTool.Type>,
+): tools is ReadonlyArray<HostedTool> =>
+  isJson(
+    tools.flatMap((tool) =>
+      [tool.inputSchema, tool.outputSchema, tool._meta].flatMap((schema) =>
+        schema === undefined ? [] : Object.values(schema),
+      ),
+    ),
+  );
+const DescribedTools = Schema.Array(ListedTool).pipe(Schema.refine(jsonTools));
+
 export interface CatalogOptions {
   /** Omit schemas. */
   readonly summary: boolean;
@@ -228,16 +259,34 @@ export const readCatalog = (root: AppRouter | DynamicRouter | undefined, options
     const tools: Array<HostedTool | HostedToolSummary> = [];
     const routers: HostedRouter[] = [];
     const { wanted, secrets } = options;
-    /** One source's metadata and tools, named under `path`. `relative` limits a filtered read. */
+    /**
+     * A source's listing and, when it listed only some of its accounts' tools (`PartialListing`),
+     * the safe error of the accounts it could not list.
+     */
+    const listing = (read: () => Effect.Effect<readonly unknown[], unknown>) =>
+      sourced(
+        () =>
+          read().pipe(
+            Effect.map((tools) => ({ tools, error: undefined })),
+            Effect.catchIf(Schema.is(PartialListing), ({ tools, error }) =>
+              Effect.succeed({ tools, error: safeFailure(error, secrets) }),
+            ),
+          ),
+        secrets,
+      );
+    /**
+     * One source's metadata and tools, named under `path`, and the error of any of its accounts
+     * that could not list. `relative` limits a filtered read.
+     */
     const readSource = (source: DynamicRouter, path: string, relative?: readonly string[]) =>
       Effect.gen(function* () {
         const describe = source.describe;
         // Read together, so a source that keeps both in one cached manifest reads it once.
-        const [meta, listed] = yield* Effect.all(
+        const [meta, { tools: listed, error }] = yield* Effect.all(
           [
             routerMeta(source, secrets),
             options.summary && source.summaries !== undefined
-              ? sourced(source.summaries, secrets)
+              ? listing(source.summaries)
               : relative !== undefined && describe !== undefined
                 ? sourced(
                     () =>
@@ -245,14 +294,21 @@ export const readCatalog = (root: AppRouter | DynamicRouter | undefined, options
                         concurrency: "unbounded",
                       }),
                     secrets,
-                  ).pipe(Effect.map((tools) => tools.filter((tool) => tool !== undefined)))
-                : sourced(source.list, secrets),
+                  ).pipe(
+                    Effect.map((tools) => ({
+                      tools: tools.filter((tool) => tool !== undefined),
+                      error: undefined,
+                    })),
+                  )
+                : listing(source.list),
           ],
           { concurrency: "unbounded" },
         );
-        const parsed = yield* Schema.decodeUnknownEffect(
-          Schema.Array(options.summary ? HostedToolSummary : HostedTool),
-        )(listed).pipe(Effect.mapError(() => new HostDeclarationInvalid()));
+        const parsed: ReadonlyArray<HostedTool | HostedToolSummary> = yield* (
+          options.summary
+            ? Schema.decodeUnknownEffect(Schema.Array(HostedToolSummary))(listed)
+            : Schema.decodeUnknownEffect(DescribedTools)(listed)
+        ).pipe(Effect.mapError(() => new HostDeclarationInvalid()));
         const names = new Set<string>();
         const found: Array<HostedTool | HostedToolSummary> = [];
         for (const tool of parsed) {
@@ -268,23 +324,25 @@ export const readCatalog = (root: AppRouter | DynamicRouter | undefined, options
             annotations: { ...tool.annotations, readOnlyHint: readOnly },
           });
         }
-        return { meta, found };
+        return { meta, found, error };
       });
     /**
      * Read a source into this catalog. The root is the whole app, so its failure fails the read,
      * as a single-source app did before routers. Elsewhere the failure is returned for the entry.
+     * A source that listed only some accounts keeps their tools and returns the others' error,
+     * at the root too.
      */
     const include = (source: DynamicRouter, path: string, relative?: readonly string[]) =>
       Effect.gen(function* () {
         if (path === "") {
-          const { meta, found } = yield* readSource(source, path, relative);
+          const { meta, found, error } = yield* readSource(source, path, relative);
           tools.push(...found);
-          return { meta, error: undefined };
+          return { meta, error };
         }
         const result = yield* Effect.result(readSource(source, path, relative));
         if (Result.isFailure(result)) return { meta: source.overrides, error: result.failure };
         tools.push(...result.success.found);
-        return { meta: result.success.meta, error: undefined };
+        return { meta: result.success.meta, error: result.success.error };
       });
     const visit = (node: AppRouter, path: string): Effect.Effect<void, HostRouterError> =>
       Effect.gen(function* () {
@@ -320,8 +378,8 @@ export const readCatalog = (root: AppRouter | DynamicRouter | undefined, options
     if (root?.kind === "router") yield* visit(root, "");
     else if (root?.kind === "dynamic" && options.scheduled !== true) {
       const read = yield* include(root, "", wanted === undefined ? undefined : [...wanted]);
-      if (wanted === undefined && read.meta !== undefined)
-        routers.push(yield* entry("", read.meta));
+      if (wanted === undefined && (read.meta !== undefined || read.error !== undefined))
+        routers.push(yield* entry("", read.meta, read.error));
     }
     return { tools, routers };
   });

@@ -14,30 +14,44 @@ import {
   SkillAccountRequired,
   SkillAppNotFound,
   SkillAppSlugAmbiguous,
+  SkillsInput,
+  SkillsInputInvalid,
   type SkillsFailure,
-  type SkillsInput,
   type SkillsResult,
   type SkillSummary,
 } from "../contracts/skills.ts";
-import { diagnosticSummary, reportFailure } from "./diagnostics.ts";
+import { diagnosticSummary, failureReference, reportFailure } from "./diagnostics.ts";
 
 const summaries = (catalog: AppSkillCatalog): readonly (typeof SkillSummary.Type)[] =>
   catalog.skills.map((skill) => ({
     ...skill,
     app: catalog.app,
-    deployment: catalog.deployment,
+    version: catalog.version,
     revision: catalog.revision,
   }));
 /** The agent reads why a read failed; the original failure reports as the same REST read would. */
 const failure = (error: Error) =>
   reportFailure(error).pipe(
-    Effect.andThen(Effect.fail(new SkillAccessFailed({ reason: diagnosticSummary(error) }))),
+    Effect.andThen(failureReference),
+    Effect.flatMap((reference) =>
+      Effect.fail(
+        new SkillAccessFailed({
+          reason: diagnosticSummary(error, { operation: "discover", reference }),
+        }),
+      ),
+    ),
   );
 /** An app the listing could not read, listed beside the others' skills. */
 const unavailable = <A extends object>(error: Error, entry: A) =>
-  reportFailure(error).pipe(Effect.as({ ...entry, reason: diagnosticSummary(error) }));
+  reportFailure(error).pipe(
+    Effect.andThen(failureReference),
+    Effect.map((reference) => ({
+      ...entry,
+      reason: diagnosticSummary(error, { operation: "discover", reference }),
+    })),
+  );
 
-type ListedApp = Pick<App, "id" | "name" | "slug" | "activeDeployment">;
+type ListedApp = Pick<App, "id" | "name" | "slug" | "activeVersion">;
 
 /**
  * The accounts one app's skills are read with: the caller's linked accounts, as a tool call uses
@@ -46,21 +60,27 @@ type ListedApp = Pick<App, "id" | "name" | "slug" | "activeDeployment">;
 const skillAccounts = <E extends Error>(
   backend: McpBackend<E>,
   app: ListedApp,
-  deployment: ListedApp["activeDeployment"],
+  version: ListedApp["activeVersion"],
 ) =>
   backend
     .listAccounts({
       app: app.id,
-      ...(deployment === null || deployment === app.activeDeployment ? {} : { deployment }),
+      ...(version === null || version === app.activeVersion ? {} : { version }),
     })
     .pipe(
       Effect.flatMap((linked) =>
-        resolveLinkedAccounts({ app: app.id, deployment, appLinks: {}, userLinks: linked }),
+        resolveLinkedAccounts({ app: app.id, version, appLinks: {}, userLinks: linked }),
       ),
     );
 
+/** The tool's input as one of the read shapes its advertised schema allows. */
+export const decodeSkillsInput = (input: unknown) =>
+  Schema.decodeUnknownEffect(SkillsInput)(input, { errors: "all" }).pipe(
+    Effect.mapError((error) => new SkillsInputInvalid({ reason: error.message })),
+  );
+
 /**
- * Resolve a slug only within authorized apps. Reference reads can pin the document's deployment.
+ * Resolve a slug only within authorized apps. Reference reads can pin the document's version.
  * A read that names accounts fails with `AccountChoiceUnsupported`, presented with its code and
  * status: reads never choose them.
  */
@@ -75,7 +95,7 @@ export const skills = <E extends Error>(
       const listed = yield* Effect.forEach(
         apps,
         (app) =>
-          skillAccounts(backend, app, app.activeDeployment).pipe(
+          skillAccounts(backend, app, app.activeVersion).pipe(
             Effect.flatMap((accounts) =>
               // An index of every app's skills must not load each app to refresh it.
               backend.listSkills({ app: app.id, accounts }, { refreshStale: false }),
@@ -106,18 +126,14 @@ export const skills = <E extends Error>(
     if (Object.hasOwn(input, "accounts"))
       return yield* failure(new AccountChoiceUnsupported({ app: app.id }));
     const slug = input.app;
-    const accounts = yield* skillAccounts(
-      backend,
-      app,
-      input.deployment ?? app.activeDeployment,
-    ).pipe(
+    const accounts = yield* skillAccounts(backend, app, input.version ?? app.activeVersion).pipe(
       Effect.catch((error): Effect.Effect<never, SkillAccountRequired | SkillAccessFailed> =>
         Schema.is(AccountRequired)(error)
           ? Effect.fail(new SkillAccountRequired({ app: slug, scope: error.scope }))
           : failure(error),
       ),
     );
-    const selection = { accounts, deployment: input.deployment, revision: input.revision };
+    const selection = { accounts, version: input.version, revision: input.revision };
     if (input.name === undefined) {
       const catalog = yield* backend
         .listSkills({ app: app.id, ...selection })

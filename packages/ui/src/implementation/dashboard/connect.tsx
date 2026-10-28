@@ -1,4 +1,4 @@
-import { useState, type ComponentType, type ReactNode, type SVGProps } from "react";
+import { Fragment, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import { ArrowUpRight01Icon, McpServerIcon, ZoomInAreaIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AssistantId } from "../../contracts/dashboard.ts";
@@ -7,14 +7,15 @@ import { Code, CopyButton } from "./code.tsx";
 import { Button } from "../components/button.tsx";
 import { Dialog, DialogContent, DialogTitle } from "../components/dialog.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/tabs.tsx";
+import { cn } from "../lib/utils.ts";
 import {
   ChatGptLogo,
   ClaudeLogo,
   CodexLogo,
-  CursorLogo,
   DevinLogo,
   GrokLogo,
   MuseLogo,
+  OpenCodeLogo,
 } from "./assistant-logos.tsx";
 
 import claudeScreenshot from "./assistant-screenshots/claude.webp";
@@ -22,7 +23,6 @@ import chatgptScreenshot from "./assistant-screenshots/chatgpt.webp";
 import devinScreenshot from "./assistant-screenshots/devin.webp";
 import grokScreenshot from "./assistant-screenshots/grok.webp";
 import museScreenshot from "./assistant-screenshots/muse.webp";
-import cursorScreenshot from "./assistant-screenshots/cursor.webp";
 
 /** The agent installs Executor itself; the prompt carries everything it needs to start. */
 export const mcpSetupPrompt = (endpoint: string, docs: string, next: string) =>
@@ -36,9 +36,6 @@ const tabClass =
 const OtherLogo = ({ className }: SVGProps<SVGSVGElement>) => (
   <HugeiconsIcon icon={McpServerIcon} strokeWidth={1.75} className={className} aria-hidden />
 );
-
-/** The published plugin serves Cursor and Grok Bot alike. */
-const executorPlugin = "https://cursor.com/marketplace/usefulsoftwareco";
 
 interface AssistantGuide {
   readonly name: string;
@@ -83,11 +80,28 @@ const Command = ({ children }: { readonly children: string }) => (
 );
 
 /** The exact MCP URL, copyable where a step asks for it. */
-function EndpointField({ endpoint }: { readonly endpoint: string }) {
+export function EndpointField({
+  endpoint,
+  className,
+}: {
+  readonly endpoint: string;
+  readonly className?: string;
+}) {
   return (
-    <div className="mt-2 flex min-w-0 items-center gap-2 rounded-lg border bg-background py-1 pr-1 pl-3">
-      <code className="min-w-0 flex-1 font-mono text-[12px] break-all text-foreground">
-        {endpoint}
+    <div
+      className={cn(
+        "mt-2 flex min-w-0 items-center gap-2 rounded-lg border bg-background py-1 pr-1 pl-3",
+        className,
+      )}
+    >
+      {/* A URL too long for its line wraps only after a slash, never inside a host or port. */}
+      <code className="min-w-0 flex-1 font-mono text-[12px] break-normal text-foreground">
+        {endpoint.split(/(?<=\/)(?!\/)/u).map((part, index) => (
+          <Fragment key={index}>
+            {index > 0 && <wbr />}
+            {part}
+          </Fragment>
+        ))}
       </code>
       <CopyButton code={endpoint} label="Copy MCP URL" text="Copy" size="sm" inline />
     </div>
@@ -132,45 +146,65 @@ const signIn = (assistant: string) => (
   </>
 );
 
-const pluginGuide = (name: string, endpoint: string): AssistantGuide => ({
+/** The public plugin connects to Executor Cloud; custom endpoints keep their own setup. */
+const openAiPluginGuide = (name: "ChatGPT" | "Codex"): AssistantGuide => ({
   name,
-  logo: name === "Cursor" ? CursorLogo : GrokLogo,
+  logo: name === "ChatGPT" ? ChatGptLogo : CodexLogo,
   method: "Executor plugin",
-  link: { href: executorPlugin, label: `Install Executor for ${name}` },
+  link: {
+    href: "https://chatgpt.com/plugins/plugin_asdk_app_6acd465c1d148191832781c3c8ab4d99",
+    label: "Open Executor plugin",
+  },
   steps: [
-    name === "Cursor" ? (
-      <>
-        Click <Ui>Add to Cursor</Ui> on the plugin page, or type{" "}
-        <Command>/add-plugin executor</Command> in Cursor.
-      </>
-    ) : (
-      <>
-        Type <Command>/add-plugin executor</Command> in Grok Bot. It installs the same Executor
-        plugin.
-      </>
-    ),
     <>
-      Choose <Ui>Connect</Ui> on the plugin&rsquo;s <Ui>executor</Ui> MCP server, then sign in and
-      approve access.
+      Open the Executor plugin page{name === "Codex" && " in the ChatGPT desktop app"} and click{" "}
+      <Ui>Install plugin</Ui>.
     </>,
     <>
-      Run <Command>/executor-setup</Command> to check the connection.
+      Connect the included <Ui>Executor</Ui> app when prompted. Sign in to Executor, choose your
+      team and approve access. If you already installed the plugin, open it to connect your account.
+    </>,
+    <>
+      Start a new {name === "Codex" ? "Codex session" : "chat"} and send:{" "}
+      <Ui>Show me the apps and tools available in my Executor workspace.</Ui> If asked to connect,
+      finish sign-in and try again.
     </>,
   ],
-  screenshot: {
-    src: cursorScreenshot,
-    width: 780,
-    height: 668,
-    alt: "Executor plugin listing with Add to Cursor and /add-plugin executor",
-    caption: "The Executor plugin in the marketplace",
-  },
-  note: (
-    <>
-      Using a scoped connection or your own server? Set the plugin&rsquo;s executor MCP server URL
-      to:
-      <EndpointField endpoint={endpoint} />
-    </>
-  ),
+  note:
+    name === "Codex" ? (
+      <div className="space-y-3">
+        <div>
+          <p className="font-medium text-foreground">Using Codex CLI?</p>
+          <p className="mt-1">
+            Run <Command>/plugins</Command>, find Executor and install it. Start a new session, then
+            connect your Executor account when prompted.
+          </p>
+        </div>
+        <details className="group border-t pt-3">
+          <summary className="cursor-pointer font-medium text-foreground">
+            Using the IDE extension?
+          </summary>
+          <p className="mt-2">
+            The IDE extension uses MCP directly. Run these commands in your terminal:
+          </p>
+          <CommandBlock
+            code={
+              "codex mcp add executor --url 'https://mcp.executor.sh/mcp'\ncodex mcp login executor"
+            }
+            path="install.sh"
+            label="Copy IDE setup commands"
+          />
+          <p className="mt-2">
+            Sign in, choose your team and approve access. Then start a new Codex session.
+          </p>
+        </details>
+      </div>
+    ) : (
+      <>
+        If installation is unavailable in your work workspace, ask your admin to allow Executor.
+        Installing the plugin and approving access to your Executor team are separate steps.
+      </>
+    ),
 });
 
 const assistantGuides = (endpoint: string): Record<AssistantId, AssistantGuide> => ({
@@ -209,39 +243,70 @@ const assistantGuides = (endpoint: string): Record<AssistantId, AssistantGuide> 
       </>
     ),
   },
-  chatgpt: {
-    name: "ChatGPT",
-    logo: ChatGptLogo,
-    method: "Custom MCP plugin",
-    link: { href: "https://chatgpt.com/plugins", label: "Open ChatGPT plugins" },
+  chatgpt:
+    endpoint === "https://mcp.executor.sh/mcp"
+      ? openAiPluginGuide("ChatGPT")
+      : {
+          name: "ChatGPT",
+          logo: ChatGptLogo,
+          method: "Custom MCP plugin",
+          link: { href: "https://chatgpt.com/plugins", label: "Open ChatGPT plugins" },
+          steps: [
+            <>
+              Open <Ui>Plugins</Ui>, click <Ui>Add</Ui>, then <Ui>Add custom MCP server</Ui>.
+            </>,
+            <>
+              Name it <Ui>Executor</Ui>, paste your MCP URL and choose <Ui>OAuth</Ui>.
+              <EndpointField endpoint={endpoint} />
+            </>,
+            <>
+              Review the warning, click <Ui>Create as a plugin</Ui>, then <Ui>Connect</Ui>.
+            </>,
+            signIn("ChatGPT"),
+          ],
+          screenshot: {
+            src: chatgptScreenshot,
+            width: 600,
+            height: 760,
+            alt: "ChatGPT's Add custom MCP server dialog with Executor, the MCP URL and OAuth",
+            caption: "ChatGPT’s Add custom MCP server dialog",
+          },
+          note: (
+            <>
+              Your ChatGPT dot uses the plugins you add here, so connect Executor once in ChatGPT.
+              In a work workspace, an admin may need to allow custom MCP servers.
+            </>
+          ),
+        },
+  opencode: {
+    name: "OpenCode",
+    logo: OpenCodeLogo,
+    method: "Terminal",
     steps: [
       <>
-        Open <Ui>Plugins</Ui>, click <Ui>Add</Ui>, then <Ui>Add custom MCP server</Ui>.
+        Add Executor from your terminal.
+        <CommandBlock
+          code={`opencode mcp add executor --url ${shellQuote(endpoint)}`}
+          path="install.sh"
+          label="Copy assistant setup"
+        />
       </>,
       <>
-        Name it <Ui>Executor</Ui>, paste your MCP URL and choose <Ui>OAuth</Ui>.
-        <EndpointField endpoint={endpoint} />
+        Open the sign-in page.
+        <CommandBlock
+          code="opencode mcp auth executor"
+          path="install.sh"
+          label="Copy sign-in command"
+        />
       </>,
-      <>
-        Review the warning, click <Ui>Create as a plugin</Ui>, then <Ui>Connect</Ui>.
-      </>,
-      signIn("ChatGPT"),
+      signIn("OpenCode"),
     ],
-    screenshot: {
-      src: chatgptScreenshot,
-      width: 600,
-      height: 760,
-      alt: "ChatGPT's Add custom MCP server dialog with Executor, the MCP URL and OAuth",
-      caption: "ChatGPT’s Add custom MCP server dialog",
-    },
     note: (
       <>
-        Your ChatGPT dot uses the plugins you add here, so connect Executor once in ChatGPT. In a
-        work workspace, an admin may need to allow custom MCP servers.
+        On OpenCode 2, add <Command>--global</Command> to use Executor in every project.
       </>
     ),
   },
-  cursor: pluginGuide("Cursor", endpoint),
   "claude-code": {
     name: "Claude Code",
     logo: ClaudeLogo,
@@ -262,30 +327,33 @@ const assistantGuides = (endpoint: string): Record<AssistantId, AssistantGuide> 
       signIn("Claude Code"),
     ],
   },
-  codex: {
-    name: "Codex",
-    logo: CodexLogo,
-    method: "Terminal",
-    steps: [
-      <>
-        Add Executor from your terminal.
-        <CommandBlock
-          code={`codex mcp add executor --url ${shellQuote(endpoint)}`}
-          path="install.sh"
-          label="Copy assistant setup"
-        />
-      </>,
-      <>
-        Open the sign-in page.
-        <CommandBlock
-          code="codex mcp login executor"
-          path="install.sh"
-          label="Copy sign-in command"
-        />
-      </>,
-      signIn("Codex"),
-    ],
-  },
+  codex:
+    endpoint === "https://mcp.executor.sh/mcp"
+      ? openAiPluginGuide("Codex")
+      : {
+          name: "Codex",
+          logo: CodexLogo,
+          method: "Terminal",
+          steps: [
+            <>
+              Add Executor from your terminal.
+              <CommandBlock
+                code={`codex mcp add executor --url ${shellQuote(endpoint)}`}
+                path="install.sh"
+                label="Copy assistant setup"
+              />
+            </>,
+            <>
+              Open the sign-in page.
+              <CommandBlock
+                code="codex mcp login executor"
+                path="install.sh"
+                label="Copy sign-in command"
+              />
+            </>,
+            signIn("Codex"),
+          ],
+        },
   devin: {
     name: "Devin",
     logo: DevinLogo,
@@ -317,7 +385,23 @@ const assistantGuides = (endpoint: string): Record<AssistantId, AssistantGuide> 
     },
     note: "In an organization, Personal access lets each member sign in with their own account.",
   },
-  "grok-bot": pluginGuide("Grok Bot", endpoint),
+  "grok-bot": {
+    name: "Grok Bot",
+    logo: GrokLogo,
+    method: "Chat message",
+    steps: [
+      <>
+        Send Grok Bot this message.
+        <MessageBlock
+          message={`Add Executor as a remote MCP server named executor at ${endpoint} (Streamable HTTP, OAuth). Start sign-in and show me the approval link. After I approve, list Executor's tools to confirm the connection.`}
+        />
+      </>,
+      <>
+        Open the sign-in link Grok Bot shows. Sign in to Executor, choose your team and approve
+        access.
+      </>,
+    ],
+  },
   grok: {
     name: "Grok",
     logo: GrokLogo,
@@ -429,6 +513,73 @@ export function AssistantChoices({
   );
 }
 
+/** One assistant's guide, with the product's exact MCP URL in every copyable example. */
+export const useAssistantGuide = (endpoint: string, assistant: AssistantId): AssistantGuide =>
+  assistantGuides(endpoint)[assistant];
+
+export type { AssistantGuide };
+
+/** The guide's numbered steps. */
+export function AssistantGuideSteps({
+  guide,
+  className,
+}: {
+  readonly guide: AssistantGuide;
+  readonly className?: string;
+}) {
+  return (
+    <ol
+      className={cn("min-w-0 space-y-3.5 text-[13px] leading-5 text-muted-foreground", className)}
+    >
+      {guide.steps.map((step, index) => (
+        <li key={index} className="flex gap-3">
+          <span
+            aria-hidden
+            className="flex size-6 shrink-0 items-center justify-center rounded-full border text-[12px] text-foreground/80 tabular-nums"
+          >
+            {index + 1}
+          </span>
+          <div className="min-w-0 flex-1 pt-0.5">{step}</div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** The assistant's logo, sized by the caller. */
+export function AssistantGuideLogo({
+  guide,
+  className,
+}: {
+  readonly guide: AssistantGuide;
+  readonly className?: string;
+}) {
+  const Logo = guide.logo;
+  return <Logo className={className} aria-hidden />;
+}
+
+/** The guide's link into the assistant's own settings, when it has one; `children` lead its label. */
+export function AssistantGuideLink({
+  guide,
+  className,
+  children,
+}: {
+  readonly guide: AssistantGuide;
+  readonly className?: string;
+  readonly children?: ReactNode;
+}) {
+  if (!guide.link) return null;
+  return (
+    <Button asChild variant="outline" size="sm" className={className}>
+      <a href={guide.link.href} target="_blank" rel="noreferrer">
+        {children}
+        {guide.link.label}
+        <HugeiconsIcon icon={ArrowUpRight01Icon} strokeWidth={2} aria-hidden />
+      </a>
+    </Button>
+  );
+}
+
 /** One assistant's setup steps, with the product's exact MCP URL in every copyable example. */
 export function AssistantSetupGuide({
   endpoint,
@@ -437,7 +588,7 @@ export function AssistantSetupGuide({
   readonly endpoint: string;
   readonly assistant: AssistantId;
 }) {
-  const guide = assistantGuides(endpoint)[assistant];
+  const guide = useAssistantGuide(endpoint, assistant);
   const Logo = guide.logo;
   return (
     <article
@@ -452,14 +603,7 @@ export function AssistantSetupGuide({
           <h3 className="text-sm font-medium">Add Executor to {guide.name}</h3>
           <p className="text-xs text-muted-foreground">{guide.method}</p>
         </div>
-        {guide.link && (
-          <Button asChild variant="outline" size="sm" className="w-full @md:w-auto">
-            <a href={guide.link.href} target="_blank" rel="noreferrer">
-              {guide.link.label}
-              <HugeiconsIcon icon={ArrowUpRight01Icon} strokeWidth={2} aria-hidden />
-            </a>
-          </Button>
-        )}
+        <AssistantGuideLink guide={guide} className="w-full @md:w-auto" />
       </header>
       <div
         className={
@@ -468,19 +612,7 @@ export function AssistantSetupGuide({
             : "p-4"
         }
       >
-        <ol className="min-w-0 space-y-3.5 text-[13px] leading-5 text-muted-foreground">
-          {guide.steps.map((step, index) => (
-            <li key={index} className="flex gap-3">
-              <span
-                aria-hidden
-                className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground tabular-nums"
-              >
-                {index + 1}
-              </span>
-              <div className="min-w-0 flex-1">{step}</div>
-            </li>
-          ))}
-        </ol>
+        <AssistantGuideSteps guide={guide} />
         {guide.screenshot && (
           <div className={guide.screenshot.wide ? "mt-4" : undefined}>
             <SetupScreenshot {...guide.screenshot} />

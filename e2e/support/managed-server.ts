@@ -51,6 +51,11 @@ export const OperatorSettings = Schema.Struct({
   EXECUTOR_URL_ALLOW_LOOPBACK_HTTP: Schema.optionalKey(Schema.String),
   EXECUTOR_URL_ALLOW_HTTP_ORIGINS: Schema.optionalKey(Schema.String),
   NODE_EXTRA_CA_CERTS: Schema.optionalKey(Schema.NonEmptyString),
+  /** Self-host's OpenID Connect sign-in, which an operator configures after first start. */
+  SSO_DISCOVERY_URL: Schema.optionalKey(Schema.NonEmptyString),
+  SSO_CLIENT_ID: Schema.optionalKey(Schema.NonEmptyString),
+  SSO_CLIENT_SECRET: Schema.optionalKey(Schema.NonEmptyString),
+  SSO_ALLOWED_DOMAINS: Schema.optionalKey(Schema.NonEmptyString),
   EXECUTOR_OAUTH_CLIENT_METADATA_URL: Schema.optionalKey(Schema.NonEmptyString),
   /** The build an upgrade installs. */
   EXECUTOR_BUILD_VERSION: Schema.optionalKey(Schema.NonEmptyString),
@@ -134,6 +139,8 @@ export const startManagedServer = (
     let saveWorkerdCoverage: Effect.Effect<void> = Effect.void;
     const env = {
       PATH: runtimePath,
+      // Every Windows process has it: the local server runs Windows's own programs from there.
+      ...(process.env.SystemRoot === undefined ? {} : { SystemRoot: process.env.SystemRoot }),
       NODE_ENV: "test",
       HOST: "127.0.0.1",
       PORT: port,
@@ -571,7 +578,7 @@ const startIsolatedSelfHost = (
       entry,
       environment,
     );
-    return server;
+    return { ...server, directory };
   });
 
 /** Start the complete self-host development entry point beside the production test target. */
@@ -590,16 +597,30 @@ export const startFreshSelfHost = (
 ) => startIsolatedSelfHost(target, "product", environment).pipe(Effect.map(({ origin }) => origin));
 
 /**
+ * Start an unconfigured product instance as `startFreshSelfHost` does, and return its origin and
+ * the file its output is written to.
+ */
+export const startLoggedSelfHost = (
+  target: typeof Target.Service,
+  environment: Readonly<Record<string, string>> = {},
+) =>
+  startIsolatedSelfHost(target, "product", environment).pipe(
+    Effect.map(({ origin, directory }) => ({ origin, log: `${directory}/server.log` })),
+  );
+
+/**
  * Start an unconfigured product instance as `startFreshSelfHost` does, and return the target that
- * reaches it: its origin, and the control plane `serverControl` uses to move its clock.
+ * reaches it: its origin, its directory with `server.log`, and the control plane `serverControl`
+ * uses to move its clock.
  */
 export const startControlledSelfHost = (
   target: typeof Target.Service,
   environment: Readonly<Record<string, string>> = {},
 ) =>
   startIsolatedSelfHost(target, "product", environment).pipe(
-    Effect.map(({ origin, controlOrigin }): typeof Target.Service => ({
+    Effect.map(({ origin, controlOrigin, directory }): typeof Target.Service => ({
       ...target,
+      directory,
       controlOrigin,
       metadata: { ...target.metadata, origin, target: "self-host" },
     })),

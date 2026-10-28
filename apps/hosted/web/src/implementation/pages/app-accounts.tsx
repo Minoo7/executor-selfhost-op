@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { use, useContext, useState } from "react";
 import { RegistryContext, useAtomSet, useAtomMount, useAtomValue } from "@effect/atom-react";
 import { AtomRegistry, AsyncResult } from "effect/reactivity";
 import { Effect, Option } from "effect";
@@ -21,7 +21,7 @@ import { ConnectionDialogHeader, ConnectionModal } from "./connection-dialog.tsx
 import { useOrganizationRoute } from "../components/organization.tsx";
 import { HostedFailure } from "../components/dashboard-bindings.tsx";
 import { appConnectionAtoms, oauthSetupAtom } from "../../contracts/apps.ts";
-import { HostedAccountForm, openAccountOAuth } from "./connect-account.tsx";
+import { HostedAccountForm, OAuthReturnContext, openAccountOAuth } from "./connect-account.tsx";
 import type { HostedOAuthSignIn } from "@executor-js/hosted-server";
 import type { AccountConnectionId } from "@executor-js/sdk";
 import {
@@ -38,7 +38,7 @@ import type { HostedError } from "../../contracts/errors.ts";
 import { HostedAccountDialog, type AccountDialogKind } from "./account-actions.tsx";
 
 /** A requirement's sign-in methods, OAuth first: connecting a new account starts with the first. */
-const methodsOf = (requirement: AccountRequirement) =>
+export const methodsOf = (requirement: AccountRequirement) =>
   Object.entries(requirement.definition.auth).sort(
     ([, a], [, b]) => Number(b.type === "oauth2") - Number(a.type === "oauth2"),
   );
@@ -79,7 +79,7 @@ export function AppAccounts({
       .flatMap((data) => (Option.isSome(data) ? data.value.accounts : []))
       .find((entry) => entry.account.id === account.id)?.access;
   const canUse = Option.isSome(data) && data.value.canUse;
-  const deployed = app.activeDeployment !== null;
+  const deployed = app.activeVersion !== null;
   const registry = useContext(RegistryContext);
   const revalidate = (account: AccountSummary["id"]) => {
     const check = checkAppAccountAtom({ organization, app: app.id, account });
@@ -117,7 +117,7 @@ export function AppAccounts({
   const target = (scope: AccountScope) => ({
     organization,
     app: app.id,
-    deployment: app.activeDeployment,
+    version: app.activeVersion,
     scope,
   });
   const editing = (scope: AccountScope): LinkEditing<HostedError> => ({
@@ -295,7 +295,7 @@ type ConnectionDialog = {
 };
 
 /** Keep one provider snapshot and draft from the first dialog through submission. */
-function AppConnectionDialogContent({
+export function AppConnectionDialogContent({
   app,
   scope,
   slot,
@@ -366,12 +366,13 @@ function AppConnectionFields({
   readonly onSaved: () => void;
 }) {
   const { organization, slug: organizationSlug } = useOrganizationRoute();
+  const returnTo = use(OAuthReturnContext);
   const app = current.id;
   const [atoms] = useState(() =>
     appConnectionAtoms({
       organization,
       app,
-      deployment: current.activeDeployment,
+      version: current.activeVersion,
       scope,
       requirement: slot,
       provider: form.provider.id,
@@ -402,6 +403,8 @@ function AppConnectionFields({
             redirectUri: value.redirectUri,
             ...(account ? { reconnect: true } : {}),
             manualClient: value.manualClient,
+            ...(value.registeredClient ? { registeredClient: value.registeredClient } : {}),
+            ...(returnTo === undefined ? {} : { returnTo }),
           },
           value.authorizationUrl,
         )

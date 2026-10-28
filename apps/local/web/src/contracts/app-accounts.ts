@@ -6,8 +6,9 @@
 import { hydrated } from "@executor-js/ui/contracts/http";
 import { acknowledge, acknowledgedQuery } from "@executor-js/ui/contracts/mutations";
 import { Data, Effect } from "effect";
-import { Atom } from "effect/reactivity";
-import type { AccountId, AccountScope, AppId, DeploymentId } from "@executor-js/sdk";
+import { Atom, type AtomRegistry } from "effect/reactivity";
+import { withCheckedApps } from "@executor-js/ui/contracts/dashboard";
+import type { AccountHealth, AccountId, AccountScope, AppId, VersionId } from "@executor-js/sdk";
 import { DashboardClient, overviewAtom } from "./api.ts";
 import { refreshAppDiscovery } from "./app-discovery.ts";
 
@@ -62,6 +63,16 @@ const liveChoices = Atom.family((key: RequirementKey) => followInventory(choices
 export const requirementChoicesAtom = (key: ConstructorParameters<typeof RequirementKey>[0]) =>
   liveChoices(new RequirementKey({ app: key.app, scope: key.scope, requirement: key.requirement }));
 
+/** Show a check's results in the app's links as soon as it finishes, then read them again. */
+export const acknowledgeLinkChecks = (
+  get: { readonly registry: AtomRegistry.AtomRegistry },
+  app: AppId,
+  health: AccountHealth,
+) => {
+  for (const list of [appLinks(app), userLinks(app)])
+    acknowledge(get, list, (rows) => rows.map((row) => withCheckedApps(row, health)));
+};
+
 /** Read an app's links again, as after a connection for one of its requirements links an account. */
 export const refreshAppLinks = (
   get: Atom.FnContext | Atom.AtomContext,
@@ -77,8 +88,8 @@ export const refreshAppLinks = (
 
 class LinkKey extends Data.Class<{
   readonly app: AppId;
-  /** The deployment whose discovery the page shows, read again after the change. */
-  readonly deployment: DeploymentId | null;
+  /** The version whose discovery the page shows, read again after the change. */
+  readonly version: VersionId | null;
   readonly scope: AccountScope;
   readonly requirement: string;
   readonly account: AccountId;

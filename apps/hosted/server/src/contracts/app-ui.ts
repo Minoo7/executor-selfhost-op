@@ -5,8 +5,9 @@ import {
   AppId,
   AppNotDeployed,
   AppNotFound,
-  DeploymentNotFound,
+  VersionNotFound,
   HttpUrl,
+  RequestRejection,
   StorageError,
   type Runtime,
 } from "@executor-js/sdk/core";
@@ -75,7 +76,7 @@ export const AppUiUnavailable = ApiError.define({
 });
 export type AppUiUnavailable = typeof AppUiUnavailable.Type;
 /**
- * Domain readiness is separate from app deployment and authorization. A pending domain has no
+ * Domain readiness is separate from deploying the app and authorization. A pending domain has no
  * usable link. An unavailable page says why, because an app without a UI is not an outage.
  */
 export const AppUiLocation = Schema.Union([
@@ -85,7 +86,7 @@ export const AppUiLocation = Schema.Union([
     url: Schema.Null,
     reason: Schema.Literals(["no_ui", "no_app_domain"]).annotate({
       description:
-        "no_ui: the active deployment has no UI (no index.html), as for tool-only apps. no_app_domain: this Executor has no app domain configured, so no app UI has an address.",
+        "no_ui: the active version has no UI (no index.html), as for tool-only apps. no_app_domain: this Executor has no app domain configured, so no app UI has an address.",
     }),
   }),
   Schema.Struct({ status: Schema.Literals(["pending", "failed"]), url: Schema.Null }),
@@ -185,16 +186,18 @@ export const HostedAppUi = HttpApiGroup.make("appUi").add(
       StorageError,
       AppNotFound,
       AppNotDeployed,
-      DeploymentNotFound,
+      VersionNotFound,
       AppUiAddressInvalid,
       AppUiUnavailable,
     ],
   })
     .annotate(
       OpenApi.Description,
-      "Get the canonical private app URL. Fails with AppNotDeployed until the app's first deployment. Returns null when the deployed app has no UI or the host has no app domain. Open the returned URL in a browser to sign in; no separate publish step is needed.",
+      "Get the canonical private app URL. Fails with AppNotDeployed until the app's first deploy. Returns null when the deployed app has no UI or the host has no app domain. Open the returned URL in a browser to sign in; no separate publish step is needed.",
     )
     .middleware(RequireOrganization),
 );
 /** A browser client can consume the same narrow contract without importing a host's full API. */
-export const HostedAppUiApi = HttpApi.make("executor-hosted").add(HostedAppUi);
+export const HostedAppUiApi = HttpApi.make("executor-hosted")
+  .add(HostedAppUi)
+  .middleware(RequestRejection);
