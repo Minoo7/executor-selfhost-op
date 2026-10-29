@@ -1,14 +1,14 @@
 {
-  "repository": "UsefulSoftwareCo/workerd",
-  "release": "v1.20260918.1-executor.caf569c512",
+  "repository": "Minoo7/workerd",
+  "release": "v1.20260918.1-executor.cfdad918ad",
   "assets": {
     "linux-64": {
       "name": "workerd-linux-64.gz",
-      "sha256": "c5dfbfbe188f30fcd128aa8318e3fdcefcd76d211da61a1bf8fb2fea032048c0"
+      "sha256": "fb3812f91a9a2479d61b90cc786ccc7af3434d143c7ca61cf11798e689a779ec"
     },
     "linux-arm64": {
       "name": "workerd-linux-arm64.gz",
-      "sha256": "b02c76c0425f32570eb114eea6a3cfce176b79710c8aaf6bc48c23b2d7f2b53f"
+      "sha256": "f22cf953782ba645e45dbab96d5a1f9cf429389c8e7da840793448068db26ce9"
     }
   }
 }
