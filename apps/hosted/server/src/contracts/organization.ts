@@ -27,6 +27,12 @@ import {
   UploadedOrganizationIcon,
   type OrganizationIconContentType,
 } from "./organization-icon.ts";
+import {
+  OrganizationMcpInstructions,
+  OrganizationMcpInstructionsUpdate,
+  OrganizationMcpInstructionsConflict,
+  OrganizationMcpInstructionsUnavailable,
+} from "./organization-mcp-instructions.ts";
 import { AuthenticationUnavailable, Forbidden, Unauthorized, RequireUser } from "./auth.ts";
 
 /** Better Auth organization identity; never a caller-selected SDK owner. */
@@ -192,6 +198,29 @@ export const Inventory = Schema.Struct({
 export type Inventory = typeof Inventory.Type;
 /** Membership and inventory for the explicitly requested organization. */
 export const HostedOrganization = HttpApiGroup.make("organization")
+  .add(
+    HttpApiEndpoint.get("mcpInstructions", "/api/organizations/:organization/mcp-instructions", {
+      params: { organization: OrganizationReference },
+      success: OrganizationMcpInstructions,
+      error: OrganizationMcpInstructionsUnavailable,
+    }).annotate(RequiredAction, "read"),
+  )
+  .add(
+    HttpApiEndpoint.put(
+      "saveMcpInstructions",
+      "/api/organizations/:organization/mcp-instructions",
+      {
+        params: { organization: OrganizationReference },
+        payload: OrganizationMcpInstructionsUpdate,
+        success: OrganizationMcpInstructions,
+        error: [
+          OrganizationMcpInstructionsConflict,
+          OrganizationMcpInstructionsUnavailable,
+          OrganizationForbidden,
+        ],
+      },
+    ).middleware(RequireUser),
+  )
   .add(
     HttpApiEndpoint.post("uploadIcon", "/api/organizations/:organization/icon", {
       params: { organization: OrganizationReference },

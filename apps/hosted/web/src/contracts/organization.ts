@@ -1,3 +1,7 @@
+import {
+  OrganizationMcpInstructionsConflict,
+  type OrganizationMcpInstructionsUpdate,
+} from "@executor-js/hosted-server/organization-mcp-instructions";
 import { hydrated } from "@executor-js/ui/contracts/http";
 import { revalidated } from "@executor-js/ui/contracts/refresh";
 import { pollingQuery } from "@executor-js/ui/contracts/polling";
@@ -446,5 +450,36 @@ export const acceptInvitationAtom = BrowserAtoms.fn((invitationId: string, get) 
       alreadyMember: result.alreadyMember,
     })),
     Effect.tap(() => Effect.sync(() => get.refresh(organizationsAtom))),
+  ),
+);
+
+export const organizationMcpInstructionsAtom = Atom.family((organization: OrganizationId) =>
+  HostedClient.query(
+    "organization",
+    "mcpInstructions",
+    hydrated({ params: { organization } }),
+  ).pipe(revalidated, protectedQuery),
+);
+export const saveOrganizationMcpInstructionsAtom = Atom.family((organization: OrganizationId) =>
+  HostedClient.runtime.fn((payload: OrganizationMcpInstructionsUpdate, get) =>
+    Effect.flatMap(HostedClient, (client) =>
+      client.organization.saveMcpInstructions({ params: { organization }, payload }),
+    ).pipe(
+      Effect.mapError(
+        (error) =>
+          new OrganizationFailed({
+            message: Schema.is(OrganizationMcpInstructionsConflict)(error)
+              ? error.message
+              : Schema.is(OrganizationForbidden)(error)
+                ? "Only organization owners and admins can save MCP instructions."
+                : "Unable to save MCP instructions. Your draft is kept. Try again.",
+          }),
+      ),
+      Effect.tap((saved) =>
+        Effect.sync(() =>
+          acknowledge(get, organizationMcpInstructionsAtom(organization), () => saved),
+        ),
+      ),
+    ),
   ),
 );

@@ -11,6 +11,7 @@
     "./catalog": "./src/contracts/catalog.ts",
     "./mcp/browser": "./src/contracts/mcp-browser.ts",
     "./organization": "./src/contracts/organization.ts",
+    "./organization-mcp-instructions": "./src/contracts/organization-mcp-instructions.ts",
     "./groups": "./src/contracts/groups.ts",
     "./resource-access": "./src/contracts/resource-access.ts",
     "./oauth-clients": "./src/contracts/oauth-clients.ts",

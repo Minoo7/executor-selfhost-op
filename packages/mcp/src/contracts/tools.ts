@@ -59,8 +59,8 @@ export interface McpOptions {
   readonly browser?: BrowserDelivery;
   /** Authenticated principal that owns model and native executions across its MCP sessions. Browser approvals also include the session ID. */
   readonly caller: Effect.Effect<string>;
-  /** Sent as the server instructions when a client connects. Hosts send the Executor app's intro. */
-  readonly instructions: string;
+  /** A string or request-context effect, resolved for each initialize or stateless server discovery. */
+  readonly instructions: string | Effect.Effect<string>;
   readonly limits: McpLimits;
   /**
    * Record a document the skills tool read on the current span. Hosts name only the Executor app's

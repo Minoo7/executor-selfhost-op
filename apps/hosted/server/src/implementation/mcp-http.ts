@@ -1,3 +1,6 @@
+import { SqlClient } from "effect/sql";
+import { readOrganizationMcpInstructions } from "./organization-mcp-instructions.ts";
+import { OrganizationMcpInstructionsUnavailable } from "../contracts/organization-mcp-instructions.ts";
 import { CurrentAuthorization } from "../contracts/authorization.ts";
 import { CurrentUsage } from "../contracts/product-analytics.ts";
 import { requiresToolMetadata } from "@executor-js/authorization";
@@ -76,6 +79,9 @@ const accountsKey = (accounts: AppAccounts | undefined) => [
     .map(([slot, ids]) => [slot, [...new Set(ids)].sort()] as const)
     .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
 ];
+const RequestInstructions = Context.Reference<
+  Effect.Effect<string, OrganizationMcpInstructionsUnavailable>
+>("hosted/McpRequestInstructions", { defaultValue: () => Effect.succeed(executorIntro) });
 const RequestCaller = Context.Reference<string | undefined>("hosted/McpRequestCaller", {
   defaultValue: () => undefined,
 });
@@ -148,7 +154,9 @@ export const makeHostedMcp = (
     ...(sessions === undefined ? {} : { sessions }),
     ...(interactions === undefined ? {} : { interactions }),
     caller: requestCaller,
-    instructions: executorIntro,
+    instructions: Effect.flatMap(RequestInstructions, (instructions) => instructions).pipe(
+      Effect.orDie,
+    ),
     limits,
     annotateSkillRead,
     browser: {
@@ -422,7 +430,18 @@ export const dispatchHostedMcp = <E, R>(
       subscribeEvent: (input) =>
         current.pipe(Effect.flatMap((fresh) => fresh.subscribeEvent(input))),
     };
+    const instructions = readOrganizationMcpInstructions(access.access.organization).pipe(
+      Effect.provideServiceEffect(
+        SqlClient.SqlClient,
+        Effect.flatten(GroupDatabase).pipe(
+          Effect.mapError(() => new OrganizationMcpInstructionsUnavailable()),
+        ),
+      ),
+      Effect.map((value) => value.combined),
+      Effect.provideContext(services),
+    );
     return yield* handler.pipe(
+      Effect.provideService(RequestInstructions, instructions),
       Effect.provideService(RequestBackend, authorized),
       Effect.provideService(RequestApprovalUrl, (address) => {
         const url = new URL(`/mcp/approve/${address.requestId}`, authentication.origin);

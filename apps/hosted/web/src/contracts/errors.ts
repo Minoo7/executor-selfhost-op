@@ -38,6 +38,8 @@ const errorMessage = Match.type<HostedError>().pipe(
     ScheduleInvalid: () => "Update the interval or calendar timing in the app source.",
     GroupNotFound: () =>
       "This group is unavailable or you do not have access. Ask an organization admin.",
+    OrganizationMcpInstructionsConflict: (error) => error.message,
+    OrganizationMcpInstructionsUnavailable: (error) => error.message,
     GroupsUnavailable: () => "Groups could not be loaded or saved. Try again.",
     GroupConflict: ({ reason }) =>
       ({

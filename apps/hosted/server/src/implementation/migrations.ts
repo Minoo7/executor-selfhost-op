@@ -1,4 +1,5 @@
 /** Schema ownership is separate even though auth and product share one Postgres database. */
+import { migrateOrganizationMcpInstructions } from "./organization-mcp-instructions.ts";
 import type { BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { createDataStepJournal } from "@executor-js/app-management/data-steps";
@@ -109,6 +110,7 @@ const hostedProductMigrations = migrateProductSteps("private_hosted_migrations",
   // App and user account links; profiles become user links. Runs after SDK 4.0.13, which keeps
   // the profiles.
   "9_app_account_links": migrateAppAccountLinks,
+  "10_org_mcp_instructions": migrateOrganizationMcpInstructions,
 });
 
 /**

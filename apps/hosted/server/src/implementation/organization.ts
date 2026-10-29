@@ -1,3 +1,10 @@
+import { SqlClient } from "effect/sql";
+import { GroupDatabase } from "../contracts/groups.ts";
+import { OrganizationMcpInstructionsUnavailable } from "../contracts/organization-mcp-instructions.ts";
+import {
+  readOrganizationMcpInstructions,
+  saveOrganizationMcpInstructions,
+} from "./organization-mcp-instructions.ts";
 import type { AuthContext } from "@better-auth/core";
 import type { Principal } from "../contracts/auth.ts";
 import { accountOAuthRedirectUri } from "./auth.ts";
@@ -272,6 +279,30 @@ export const hostedOrganizationHandlers = HttpApiBuilder.group(
     Effect.gen(function* () {
       const authentication = yield* Authentication;
       return handlers
+        .handle("mcpInstructions", () =>
+          Effect.flatMap(CurrentOrganization, (access) =>
+            readOrganizationMcpInstructions(access.organization).pipe(
+              Effect.provideServiceEffect(
+                SqlClient.SqlClient,
+                Effect.flatten(GroupDatabase).pipe(
+                  Effect.mapError(() => new OrganizationMcpInstructionsUnavailable()),
+                ),
+              ),
+            ),
+          ),
+        )
+        .handle("saveMcpInstructions", ({ payload }) =>
+          Effect.flatMap(requireOrganizationAdmin, (access) =>
+            saveOrganizationMcpInstructions(access.organization, payload).pipe(
+              Effect.provideServiceEffect(
+                SqlClient.SqlClient,
+                Effect.flatten(GroupDatabase).pipe(
+                  Effect.mapError(() => new OrganizationMcpInstructionsUnavailable()),
+                ),
+              ),
+            ),
+          ),
+        )
         .handleRaw("uploadIcon", () =>
           Effect.gen(function* () {
             const organization = yield* requireOrganizationAdmin;
