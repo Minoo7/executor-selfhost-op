@@ -1,0 +1,110 @@
+From 0f9f62b0443afaef4b400f0d314831bd5a8517f0 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 4 Nov 2026 19:03:13 +0000
+Subject: [PATCH] feat(dashboard): delete skill files and skills from the
+ Skills tab
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ packages/ui/src/contracts/app-management.ts   | 25 +++++++++++-------
+ .../implementation/dashboard/skill-editor.tsx | 26 +++++++++++++++++++
+ 2 files changed, 42 insertions(+), 9 deletions(-)
+
+diff --git a/packages/ui/src/contracts/app-management.ts b/packages/ui/src/contracts/app-management.ts
+index 1e8a04cbe..2d6718e73 100644
+--- a/packages/ui/src/contracts/app-management.ts
++++ b/packages/ui/src/contracts/app-management.ts
+@@ -94,9 +94,10 @@ export const makeAppManagementAtoms = <R, E>(
+       ),
+   );
+   /**
+-   * Commit one text file on top of the current working source; a null base creates a new file. Like a Git host's web
+-   * editor. A commit never deploys. Other files may have changed since the editor opened; the file itself must not have.
+-   * The server's `expected` check still rejects a commit that lands between this read and write.
++   * Commit one text file on top of the current working source; a null base creates a new file and null content deletes
++   * the path, a file or a whole folder such as a skill. Like a Git host's web editor. A commit never deploys. Other files
++   * may have changed since the editor opened; the file itself must not have. The server's `expected` check still rejects
++   * a commit that lands between this read and write.
+    */
+   const commitFile = Atom.family((app: AppId) =>
+     runtime.fn(
+@@ -104,7 +105,7 @@ export const makeAppManagementAtoms = <R, E>(
+         input: {
+           path: string;
+           base: string | null;
+-          content: string;
++          content: string | null;
+           message: string;
+         },
+         get,
+@@ -120,12 +121,18 @@ export const makeAppManagementAtoms = <R, E>(
+           const file = current.files.find((item) => item.path === input.path);
+           if ((file === undefined || !isTextFile(file) ? null : file.content) !== input.base)
+             return { _tag: "FileChanged" as const };
++          const content = input.content;
+           const files =
+-            file === undefined
+-              ? Arr.append(current.files, { path: input.path, content: input.content })
+-              : Arr.map(current.files, (item) =>
+-                  item.path === input.path ? { path: item.path, content: input.content } : item,
+-                );
++            content === null
++              ? Arr.filter(
++                  current.files,
++                  (item) => item.path !== input.path && !item.path.startsWith(`${input.path}/`),
++                )
++              : file === undefined
++                ? Arr.append(current.files, { path: input.path, content })
++                : Arr.map(current.files, (item) =>
++                    item.path === input.path ? { path: item.path, content } : item,
++                  );
+           const saved = yield* api.commit({
+             params: { ...params, app },
+             payload: { expected: current.revision.commit, files, message: input.message },
+diff --git a/packages/ui/src/implementation/dashboard/skill-editor.tsx b/packages/ui/src/implementation/dashboard/skill-editor.tsx
+index 104105d5c..644b2eca7 100644
+--- a/packages/ui/src/implementation/dashboard/skill-editor.tsx
++++ b/packages/ui/src/implementation/dashboard/skill-editor.tsx
+@@ -211,6 +211,25 @@ export function SkillFileEditor<E>({
+       onCommitted({ commit: result.value.commit, deploy: true });
+     }
+   };
++  const remove = async () => {
++    const target = instructions ? `the ${skill} skill and all its files` : name;
++    if (savingRef.current || version.waiting || !window.confirm(`Delete ${target}?`)) return;
++    savingRef.current = true;
++    setSaving(true);
++    setError(undefined);
++    setChanged(false);
++    const result = await commit({
++      path: instructions ? path.slice(0, -"/SKILL.md".length) : path,
++      base: instructions ? null : base,
++      content: null,
++      message: `Delete ${instructions ? `${skill} skill` : `${skill}/${name}`}`,
++    });
++    savingRef.current = false;
++    setSaving(false);
++    if (Exit.isFailure(result)) setError(result.cause);
++    else if (result.value._tag === "FileChanged") setChanged(true);
++    else onCommitted({ commit: result.value.commit, deploy: true });
++  };
+   const name = path.split("/").at(-1) ?? path;
+   const label = instructions ? "Skill instructions" : `Edit ${name}`;
+   const placeholder = instructions ? "Write skill instructions here…" : "Write file contents here…";
+@@ -250,6 +269,13 @@ export function SkillFileEditor<E>({
+               >
+                 Vim mode
+               </SwitchItem>
++              <DropdownMenuItem
++                variant="destructive"
++                disabled={saving || version.waiting}
++                onSelect={remove}
++              >
++                {instructions ? "Delete skill" : "Delete file"}
++              </DropdownMenuItem>
+             </DropdownMenuContent>
+           </DropdownMenu>
+           {dirty && (
+-- 
+2.52.0
+
