@@ -1,0 +1,44 @@
+{
+  "image": "registry.depot.dev/5884x6f4tn:2.0.0-beta.39-org-instructions-9baa000e3",
+  "digest": "sha256:68ff0fed49249b3228939faebeaec1a30e8421b05d2813c4ecaa5702e2f7e900",
+  "sourceRevision": "9baa000e3abc275051e313efa3b4d0ffc43895de",
+  "buildVersion": "2.0.0-beta.39-org-instructions-9baa000e3",
+  "depotBuild": "https://depot.dev/orgs/4z8l73c27s/projects/5884x6f4tn/builds/hxnvnwjm68",
+  "platforms": [
+    {
+      "os": "linux",
+      "architecture": "amd64",
+      "manifest": "sha256:d136bf255c5580721ab95fc5637fd0fae409123c1a1f1de8933c66275737d204"
+    },
+    {
+      "os": "linux",
+      "architecture": "arm64",
+      "manifest": "sha256:8954fc9273f6bce97881714e3d99303f4795e0ed7ad4d86f002e494dfc2f0751"
+    }
+  ],
+  "startupVerification": {
+    "method": "BuildKit RUN of published image with BusyBox helper and injected OTLP variables unset",
+    "build": "https://depot.dev/orgs/4z8l73c27s/projects/5884x6f4tn/builds/m5fdtsdkc6",
+    "platforms": ["linux/amd64", "linux/arm64"],
+    "expectedHeader": "Executor-Build: 2.0.0-beta.39-org-instructions-9baa000e3",
+    "result": "passed"
+  },
+  "syntheticUpgradeVerification": {
+    "build": "https://depot.dev/orgs/4z8l73c27s/projects/5884x6f4tn/builds/nnt7lnq6ls",
+    "baselineSource": "f664b14bd4ff447e5c9c708371f25b71b9583377",
+    "platform": "linux/amd64",
+    "retainedState": [
+      "owner session",
+      "organization",
+      "MCP instruction additions",
+      "MCP instruction revision"
+    ],
+    "checks": [
+      "upgrade",
+      "repeat candidate startup",
+      "image-only rollback on candidate-written synthetic data",
+      "stopped-writer snapshot restore"
+    ],
+    "result": "passed"
+  }
+}
