@@ -3,7 +3,7 @@ import { migrateOrganizationMcpInstructions } from "./organization-mcp-instructi
 import type { BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { createDataStepJournal } from "@executor-js/app-management/data-steps";
-import { makeExecutorStorage } from "@executor-js/sdk/core";
+import { makeExecutorStorage, StorageMigrationFailed } from "@executor-js/sdk/core";
 import { Effect, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import * as Migrator from "effect/sql/Migrator";
@@ -27,11 +27,12 @@ export class HostedMigrationFailed extends Schema.TaggedError<HostedMigrationFai
     stage: Schema.Literals(["auth", "product"]),
     causeTags: Schema.optionalKey(Schema.Array(Schema.String)),
     sqlState: Schema.optionalKey(Schema.String),
+    migrationVersion: Schema.optionalKey(Schema.String),
   },
 ) {
   override get message() {
     const tags = this.causeTags?.join(" > ") ?? "unknown cause";
-    return `${this.stage} migration failed: ${tags}${this.sqlState ? ` (SQLSTATE ${this.sqlState})` : ""}`;
+    return `${this.stage} migration failed${this.migrationVersion ? ` at executor version ${this.migrationVersion}` : ""}: ${tags}${this.sqlState ? ` (SQLSTATE ${this.sqlState})` : ""}`;
   }
 }
 
@@ -39,6 +40,15 @@ export class HostedMigrationFailed extends Schema.TaggedError<HostedMigrationFai
 export const migrationFailed =
   (stage: HostedMigrationFailed["stage"]) =>
   (cause: unknown): HostedMigrationFailed => {
+    if (cause instanceof StorageMigrationFailed)
+      return new HostedMigrationFailed({
+        stage,
+        causeTags: ["StorageMigrationFailed", ...cause.causeTags],
+        ...(cause.sqlState === undefined ? {} : { sqlState: cause.sqlState }),
+        ...(cause.migrationVersion === undefined
+          ? {}
+          : { migrationVersion: cause.migrationVersion }),
+      });
     const causeTags: Array<string> = [];
     let sqlState: string | undefined;
     let current: unknown = cause;

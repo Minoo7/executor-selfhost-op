@@ -58,6 +58,11 @@ const httpsCallbackCloud = { status: "scheduled", runtime: "attached" } as const
  * managed local Cloud reads no feed and lists only the built-in Executor app.
  */
 const officialFeedCloud = { status: "scheduled", runtime: "attached" } as const;
+/**
+ * Reads the OAuth client metadata document a deployed stage publishes: managed local Cloud has no
+ * public HTTPS origin, so it publishes none.
+ */
+const publicDocumentCloud = { status: "scheduled", runtime: "attached" } as const;
 /** Runs alone on a managed local Cloud started with Better Auth's per-address limit on. */
 const rateLimitedCloud = { status: "scheduled", runtime: "rate-limited" } as const;
 const rolledBackCloud = { status: "scheduled", runtime: "rolled-back" } as const;
@@ -138,6 +143,17 @@ export const scenarios = plan({
       local: na("Local has no hosted organizations."),
     },
   },
+  storageMigrationDiagnostics: {
+    legacyStorage: true,
+    file: "storage-migration-diagnostics.spec.ts",
+    title:
+      "failed executor upgrades report a safe SQLSTATE and version and leave the journal unchanged",
+    targets: {
+      "self-host": scheduled,
+      local: na("Hosted startup reports the migration diagnostics this scenario asserts."),
+      cloud: na("Requires a runner-owned database with a deliberately interrupted upgrade."),
+    },
+  },
   cloudRoleHostRoutes: {
     fixtures: "actors",
     file: "cloud-role-hosts.spec.ts",
@@ -169,6 +185,17 @@ export const scenarios = plan({
       cloud: managedCloud,
       "self-host": na("Self-host's callback is on its one origin; nothing forwards to it."),
       local: na("Local's callback is on its one origin; nothing forwards to it."),
+    },
+  },
+  cloudClientMetadataEdge: {
+    fixtures: "actors",
+    file: "cloud-client-metadata.spec.ts",
+    title:
+      "Cloud publishes its OAuth client metadata document on the edge with the edge's callback, and the deployment origin keeps the document earlier grants were issued to",
+    targets: {
+      cloud: publicDocumentCloud,
+      "self-host": na("Self-host serves its document on its one origin; nothing forwards to it."),
+      local: na("Local's loopback callback has no public document; it registers dynamically."),
     },
   },
   cloudSiteEdge: {
@@ -674,6 +701,17 @@ export const scenarios = plan({
       local: na("Hosted version API scenario"),
     },
   },
+  mcpListingUpstreamChange: {
+    fixtures: "actors",
+    file: "mcp-catalog.spec.ts",
+    title:
+      "MCP execute and search reach tools an MCP server adds without announcing them, after the app's routine refresh and without a redeploy",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Loopback MCP fixture; the shared execute path is covered on self-host"),
+      local: na("Hosted version API scenario"),
+    },
+  },
   mcpExecuteSignatures: {
     fixtures: "actors",
     file: "mcp-catalog.spec.ts",
@@ -950,6 +988,16 @@ export const scenarios = plan({
       local: na("Hosted version API scenario"),
     },
   },
+  mcpNestedExecutorResult: {
+    fixtures: "actors",
+    file: "mcp-direct-calls.spec.ts",
+    title: "Executor behind Executor returns each nested result once",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Loopback MCP router; covered on self-host"),
+      local: na("Hosted version API scenario"),
+    },
+  },
   mcpNativeCallApproval: {
     fixtures: "actors",
     file: "mcp-direct-calls.spec.ts",
@@ -1222,6 +1270,28 @@ export const scenarios = plan({
       local: na("The local dashboard does not batch its reads; most of them are live streams"),
     },
   },
+  dashboardBatchAuthentication: {
+    fixtures: "actors",
+    file: "dashboard-batch-authentication.spec.ts",
+    title:
+      "A dashboard batch checks its session and each membership once, without retaining authority for the next request",
+    targets: {
+      "self-host": scheduled,
+      cloud: scheduled,
+      local: na("The local dashboard does not batch its reads"),
+    },
+  },
+  dashboardBatchIsolation: {
+    fixtures: "actors",
+    file: "dashboard-batch-isolation.spec.ts",
+    title:
+      "A dashboard batch answers each read with its own caller's identity, organization and role",
+    targets: {
+      "self-host": scheduled,
+      cloud: scheduled,
+      local: na("The local dashboard does not batch its reads"),
+    },
+  },
   dashboardBuildChange: {
     fixtures: "actors",
     file: "dashboard-read-batches.spec.ts",
@@ -1290,6 +1360,17 @@ export const scenarios = plan({
       local: scheduled,
       "self-host": na("Hosted Tools pages are covered through organization routes."),
       cloud: na("Hosted Tools pages are covered through organization routes."),
+    },
+  },
+  appLoadFailureContainment: {
+    fixtures: "actors",
+    file: "app-load-failure-containment.spec.ts",
+    title:
+      "An app whose code fails to load fails only its own reads and names its error in every preview",
+    targets: {
+      "self-host": scheduled,
+      cloud: scheduled,
+      local: na("The hosted app overview and dashboard batches own this presentation."),
     },
   },
   toolsErrorState: {
@@ -2640,6 +2721,16 @@ export const scenarios = plan({
       local: na("Exercises the hosted import and account connection APIs."),
     },
   },
+  appFetchUserAgent: {
+    fixtures: "actors",
+    file: "app-fetch-user-agent.spec.ts",
+    title: "An app's fetch without a User-Agent names Executor and keeps an app's own",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Uses a loopback upstream to exercise the shared outbound network."),
+      local: na("Exercises the hosted app deploy, account check and tool call APIs."),
+    },
+  },
   mcpUserAgent: {
     fixtures: "actors",
     file: "mcp-user-agent.spec.ts",
@@ -3458,6 +3549,17 @@ export const scenarios = plan({
       local: na("Local runs apps through the same workerd runner and outbound as self-host."),
     },
   },
+  credentialHostsUnderscore: {
+    fixtures: "actors",
+    file: "credential-hosts.spec.ts",
+    title:
+      "a provider may declare a host with an underscore, as Docker names containers, and its credentials reach it",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Uses a loopback service; Cloud app Workers reach only public addresses."),
+      local: na("Local runs apps through the same workerd runner and outbound as self-host."),
+    },
+  },
   credentialHostsRestart: {
     fixtures: "actors",
     file: "credential-hosts.spec.ts",
@@ -4126,6 +4228,16 @@ export const scenarios = plan({
       local: na("Exercises the shared importer and OAuth setup through hosted APIs."),
     },
   },
+  appNameValidation: {
+    fixtures: "actors",
+    file: "app-name-validation.spec.ts",
+    title: "App names with control or invisible-only characters are refused with a bad request",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Cloud egress refuses loopback MCP hosts, so no Cloud scenario imports one."),
+      local: na("Exercises the shared importer and app rename through hosted APIs."),
+    },
+  },
   importApprovals: {
     fixtures: "actors",
     file: "import-approvals.spec.ts",
@@ -4183,6 +4295,12 @@ export const scenarios = plan({
   oauthProvisioning: {
     file: "oauth-provisioning.spec.ts",
     title: "OAuth resources are provisioned before client registration",
+    targets: { local: scheduled, "self-host": scheduled, cloud: scheduled },
+  },
+  oauthRegistrationApplicationType: {
+    file: "oauth-registration-application-type.spec.ts",
+    title:
+      "a registration without application_type is native for a loopback or private-use callback, held to the native rules, and web otherwise",
     targets: { local: scheduled, "self-host": scheduled, cloud: scheduled },
   },
   apiDocumentPatterns: {
@@ -5014,6 +5132,17 @@ export const scenarios = plan({
       local: na("Exercises shared OAuth through the hosted API."),
     },
   },
+  oauthGoogleRenewableGrant: {
+    fixtures: "actors",
+    file: "oauth-google-renewable-grant.spec.ts",
+    title:
+      "A Google sign-in asks for an offline grant with fresh consent unless the app declares otherwise",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Exercises shared OAuth sign-in through the hosted API; self-host covers it."),
+      local: na("Exercises shared OAuth sign-in through the hosted API."),
+    },
+  },
   oauthAuthorizationParams: {
     fixtures: "actors",
     file: "oauth-authorization-params.spec.ts",
@@ -5459,6 +5588,15 @@ export const scenarios = plan({
       local: na("Local has no sign-in or SSO."),
     },
   },
+  selfHostSsoConnectPasswordAccount: {
+    file: "self-host-sso.spec.ts",
+    title: "Self-host SSO connects to a signed-in password account only for the same email",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Cloud customer SSO has its own OIDC scenario."),
+      local: na("Local has no sign-in or SSO."),
+    },
+  },
   selfHostSsoUserinfoClaims: {
     file: "self-host-sso.spec.ts",
     title:
@@ -5568,6 +5706,18 @@ export const scenarios = plan({
       "self-host": scheduled,
       cloud: scheduled,
       local: na("The API document and catalog installation are hosted product surfaces."),
+    },
+  },
+  cloudAppQueryAuth: {
+    fixtures: "actors",
+    file: "cloud-app-query-auth.spec.ts",
+    appOrigin: true,
+    title:
+      "Cloud app queries read current authorization without deleting expired verification records",
+    targets: {
+      cloud: managedCloud,
+      "self-host": na("AppPages has a separate Better Auth adapter only on Cloud."),
+      local: na("Local does not serve hosted app origins."),
     },
   },
   appUiApiDocument: {
@@ -6008,7 +6158,7 @@ export const scenarios = plan({
     fixtures: "actors",
     file: "oauth-token-telemetry.spec.ts",
     title:
-      "Cloud OAuth token requests record their grant type, OAuth error, refresh-family revocation and client family without reporting them",
+      "Cloud OAuth token requests record their grant type, OAuth error, refresh-family revocation and client family, and registrations their refusal rule, without reporting them",
     targets: {
       cloud: managedCloud,
       "self-host": na("Cloud OAuth token endpoint instrumentation."),
@@ -6105,6 +6255,17 @@ export const scenarios = plan({
       "self-host": scheduled,
       cloud: managedCloud,
       local: na("Local has no organizations, so its MCP spans name none."),
+    },
+  },
+  securityObservability: {
+    fixtures: "actors",
+    file: "security-observability.spec.ts",
+    title:
+      "Hosted request spans record the client, the credential and why a request was refused, and security actions leave audit records, never a credential",
+    targets: {
+      "self-host": scheduled,
+      cloud: managedCloud,
+      local: na("Local has no hosted sign-in, API keys or organizations to refuse."),
     },
   },
   organizationRequestSpans: {
@@ -8563,6 +8724,16 @@ export const scenarios = plan({
       ),
     },
   },
+  telemetryStoreIdleAtBound: {
+    file: "telemetry-store-bound.spec.ts",
+    title:
+      "The bundled collector at its size bound keeps its traces while an idle server's exports trickle in",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Cloud exports to its own collector, not the bundled one."),
+      local: na("Local ships the same collector bundle; the self-host run covers it."),
+    },
+  },
   failedPollTraces: {
     legacyStorage: true,
     file: "idle-poll-traces.spec.ts",
@@ -8801,7 +8972,7 @@ export const scenarios = plan({
   v1ImportRollback: {
     file: "cloud-v1-import-run.spec.ts",
     title:
-      "Cloud v1 import marks a verified workspace moved in v1 and gives it back on rollback only once its v2 organization is deleted, clearing its import map but its users",
+      "Cloud v1 import marks a verified workspace moved in v1 and gives it back on rollback only once its v2 organization is deleted, clearing its import map but its users, and imports it again into a new organization where every member's toolkit copy is live and v1's toolkit URL forwards to it",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
   v1ImportPaidBilling: {
@@ -8859,6 +9030,12 @@ export const scenarios = plan({
       "Cloud v1 import retries v1 plan reads that time out or fail and still reports the organization",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
+  v1ImportLongNames: {
+    file: "cloud-v1-import-run.spec.ts",
+    title:
+      "Cloud v1 import gives every app an address of its own when its name is longer than an address holds: a long integration label's apps per connection, numbered for members' connections of one long name, shorten the label so each keeps its connection's name and number, artifacts of one long title are numbered by retries that each change the address, the dry run plans those names and reports the artifact left without one, and the import started again after it is renamed keeps every app the first run made",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
   v1ImportSplitNames: {
     file: "cloud-v1-import-run.spec.ts",
     title:
@@ -8869,6 +9046,12 @@ export const scenarios = plan({
     file: "cloud-v1-import-run.spec.ts",
     title:
       "Cloud v1 import moves a shared workspace on the server and cuts it over once it verifies: the oldest admin owns it, members keep their roles without a welcome email, org connections become shared accounts linked for everyone and members' their own, a member's approve rule is dropped while their block applies to everyone, every member gets their own copy of an org toolkit, and a former member's rows stay behind",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  v1ImportToolkitScale: {
+    file: "cloud-v1-import-run.spec.ts",
+    title:
+      "Cloud v1 import dry runs and moves a workspace of 20 members with 10 toolkits of over a thousand rules over 8 MCP servers of 200 tools, one of them an app per connection, planning and saving every member's copy of each toolkit with exactly the tools its rules and the workspace's allow",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
   v1ImportSlugDisplacement: {
@@ -8892,13 +9075,19 @@ export const scenarios = plan({
   v1ImportIntoCopy: {
     file: "cloud-v1-import-run.spec.ts",
     title:
-      "Cloud v1 import copies a paid, shared v1 workspace into the empty v2 team its owner owns when the operator lists it: the team keeps its name and slug, gains the workspace's app, accounts and toolkit copies, its teammate joins, its subscription carries over to the team, a second copy into the team is refused as it is no longer empty, and after its billing goes back a rollback removes only what the import added",
+      "Cloud v1 import copies a paid, shared v1 workspace into the empty v2 team its owner owns when the operator lists it: the team keeps its name and slug, gains the workspace's app, accounts and toolkit copies, its teammate joins, its subscription carries over to the team, a second copy into the team is refused as it is no longer empty, after its billing goes back a rollback removes only what the import added, and importing it again copies it into the team once more, each member's toolkit copy under a new live connection v1's toolkit URL forwards to while the first import's copies stay revoked",
+    targets: { ...cloudOnboarding, cloud: managedCloud },
+  },
+  v1ImportIntoEnterprise: {
+    file: "cloud-v1-import-run.spec.ts",
+    title:
+      "Cloud v1 import copies an Enterprise v1 workspace into the empty v2 team on v2's Enterprise plan that its owner owns when the operator lists it to copy: the dry run plans it with no billing and still flags SSO, the import copies its items, its newcomer joins, a member already in the team keeps their membership and role, the team's and v1's billing stay as they were with no hold, a rollback needs no billing return and removes only what the import added, and an Enterprise workspace the operator did not list is still held back",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
   v1ImportIntoRefused: {
     file: "cloud-v1-import-run.spec.ts",
     title:
-      "Cloud v1 import refuses to move a v1 workspace into a listed existing v2 organization when it has items to copy, a second active member, a pending invitation or a paid plan, also when it would leave its data behind, when its owner has no v2 account or does not own the organization, also to copy into it, when the organization does not exist, and when the listed mode is unknown: the dry run says why, and the import holds it back and gives it to v1 again without writing its import map or changing the organization",
+      "Cloud v1 import refuses to move a v1 workspace into a listed existing v2 organization when it has items to copy, a second active member, a pending invitation or a paid plan, Enterprise included, also when it would leave its data behind, when its owner has no v2 account or does not own the organization, also to copy into it, when the organization does not exist, and when the listed mode is unknown: the dry run says why, and the import holds it back and gives it to v1 again without writing its import map or changing the organization",
     targets: { ...cloudOnboarding, cloud: managedCloud },
   },
   v1ImportAllowed: {
@@ -9448,6 +9637,21 @@ export const scenarios = plan({
       local: scheduled,
       "self-host": na(
         "Both hosts read connections through the same SDK; Local reaches the stored row without organization fixtures.",
+      ),
+      cloud: na(
+        "Legacy rows need a runner-owned database; Cloud cases share one Worker and database.",
+      ),
+    },
+  },
+  oauthRefreshRedirectUri: {
+    legacyStorage: true,
+    file: "oauth-refresh-redirect-uri.spec.ts",
+    title:
+      "OAuth refreshes repeat the callback the sign-in used, and a grant an earlier release saved without one still refreshes without it",
+    targets: {
+      local: scheduled,
+      "self-host": na(
+        "Both hosts refresh grants through the same SDK; Local reaches the stored grant without organization fixtures.",
       ),
       cloud: na(
         "Legacy rows need a runner-owned database; Cloud cases share one Worker and database.",

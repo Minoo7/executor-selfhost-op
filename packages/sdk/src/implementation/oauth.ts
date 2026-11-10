@@ -1,4 +1,4 @@
-import type { AppAccountUse, ResourceLifecycle } from "../contracts/executor.ts";
+import { CurrentActor, type AppAccountUse, type ResourceLifecycle } from "../contracts/executor.ts";
 import type { BackgroundWork } from "../contracts/declarations.ts";
 /** Trusted OAuth lifecycle. Provider definitions never contain client secrets or saved grants. */
 import { parseDestination, parseEndpoint, httpsOnlyUrlPolicy } from "@executor-js/utils/url-policy";
@@ -99,7 +99,7 @@ import {
 import { StoredAccount, type Credentials } from "../contracts/storage.ts";
 import { type AccountCredential, invocationAccount } from "./provider.ts";
 import { intersectCredentialHosts } from "./credential-handles.ts";
-import { query, transaction, type Query } from "./database.ts";
+import { inOrder, query, transaction, type Query } from "./database.ts";
 import {
   claimCredentials,
   credentialsDigest,
@@ -335,6 +335,31 @@ type CredentialUse =
   | { readonly kind: "run"; readonly app: { readonly id: AppId; readonly owner: OwnerId } }
   | { readonly kind: "removal"; readonly app: { readonly id: AppId; readonly owner: OwnerId } }
   | { readonly kind: "check" };
+/**
+ * Why credentials are decrypted: a credential use, or `resolve` for a caller that names none.
+ * `oauth.resolve` records it as `oauth.resolve.purpose`.
+ */
+type CredentialPurpose = CredentialUse["kind"] | "resolve";
+/**
+ * What an `oauth.resolve` span records about the credentials it decrypts: the account, the
+ * organization that owns it, the actor it is decrypted for and why. All opaque IDs or closed
+ * labels, read without I/O; never the credentials.
+ */
+const credentialAccess = (
+  purpose: CredentialPurpose,
+  account: StoredAccount,
+  provider: ProviderDefinition,
+  actor: string | undefined,
+) => ({
+  "oauth.provider.id": account.provider,
+  "oauth.resolve.purpose": purpose,
+  "oauth.resolve.credential_type": provider.auth[account.method]?.type ?? "unknown",
+  "executor.account.id": account.id,
+  ...(account.owner.startsWith("organization:")
+    ? { "executor.organization.id": account.owner.slice("organization:".length) }
+    : {}),
+  ...(actor === undefined ? {} : { "executor.user.id": actor }),
+});
 /**
  * How an evaluation uses one account: whether a user requirement uses it (`user`), and the app
  * requirements it fills (`appUses`). Each use is authorized on its own; see `ResourceLifecycle`.
@@ -1330,15 +1355,21 @@ export const makeOAuth = (
       if (methods.length === 0)
         return yield* new OAuthClientsUnsupported({ provider: input.provider });
       if (protocol === undefined) return yield* new OAuthSetupFailed({ reason: "unsupported" });
-      return yield* Effect.forEach(methods, ({ name, method }) =>
-        protocol.discover(method).pipe(
-          Effect.mapError(discoveryFailed),
-          Effect.map((discovered) => ({
-            method: name,
-            issuer: HttpUrl.make(oauthClientIssuer(discovered.server)),
-          })),
-        ),
+      // Discovered at once; the first method that failed, in order, is the one reported.
+      const discovered = yield* Effect.forEach(
+        methods,
+        ({ name, method }) =>
+          protocol.discover(method).pipe(
+            Effect.mapError(discoveryFailed),
+            Effect.map((found) => ({
+              method: name,
+              issuer: HttpUrl.make(oauthClientIssuer(found.server)),
+            })),
+            Effect.result,
+          ),
+        { concurrency: "unbounded" },
       );
+      return yield* Effect.forEach(discovered, (result) => Effect.fromResult(result));
     }).pipe(Effect.withSpan("oauth.clients.issuers"));
 
   const clients = {
@@ -2157,10 +2188,16 @@ export const makeOAuth = (
             }),
         ),
       );
+      // A grant that expires without a refresh token needs a reconnect then; record it at sign-in.
+      yield* Effect.annotateCurrentSpan(
+        "oauth.grant.refresh_token",
+        tokens.refresh_token !== undefined,
+      );
       const completedAt = yield* Clock.currentTimeMillis;
       const issued = {
         response: attempt.response,
         fields,
+        redirectUri: attempt.redirectUri,
         ...(tokens.refresh_token === undefined ? {} : { refreshToken: tokens.refresh_token }),
         ...expiry(completedAt, tokens.expires_in),
       };
@@ -2325,13 +2362,16 @@ export const makeOAuth = (
    * it is returned as a value and recorded as the span's outcome, and only failed after the span.
    */
   const resolveCredentials = (
+    purpose: CredentialPurpose,
     account: StoredAccount,
     provider: ProviderDefinition,
     resolution: Resolution,
     rejected?: JsonObject,
   ) =>
     Effect.gen(function* () {
-      yield* Effect.annotateCurrentSpan("oauth.provider.id", account.provider);
+      yield* Effect.annotateCurrentSpan(
+        credentialAccess(purpose, account, provider, yield* CurrentActor),
+      );
       if (rejected !== undefined)
         yield* Effect.annotateCurrentSpan("oauth.renewal.trigger", "credentials_rejected");
       // Secrets the user brought.
@@ -2853,6 +2893,7 @@ export const makeOAuth = (
    * `resolution` records whether it did.
    */
   const resolveAuthorized = (
+    purpose: CredentialPurpose,
     account: StoredAccount,
     provider: ProviderDefinition,
     allowed: ReadonlySet<AccountId> | undefined,
@@ -2865,14 +2906,14 @@ export const makeOAuth = (
   ) =>
     Effect.gen(function* () {
       if (allowed !== undefined && !allowed.has(account.id)) return yield* new AccountUseRefused();
-      const fields = yield* resolveCredentials(account, provider, resolution, rejected);
+      const fields = yield* resolveCredentials(purpose, account, provider, resolution, rejected);
       // A remote token refresh can outlive a permission change, an unlinking or account deletion.
       if (resolution.contested) yield* recheck;
       return fields;
     });
   const resolve = (account: StoredAccount, provider: ProviderDefinition, rejected?: JsonObject) =>
     Effect.flatMap(authorized([account]), (allowed) =>
-      resolveAuthorized(account, provider, allowed, { contested: false }, rejected),
+      resolveAuthorized("resolve", account, provider, allowed, { contested: false }, rejected),
     ).pipe(
       // A refusal is the storage failure callers that do not distinguish it have always seen.
       Effect.catchTag("AccountUseRefused", () => Effect.fail(new StorageError())),
@@ -2951,29 +2992,33 @@ export const makeOAuth = (
       selected,
     ),
   ) =>
-    Effect.flatMap(authority, (checked) =>
-      Effect.gen(function* () {
-        const recheck = selectionAuthorized(use, selected);
-        // Without grant rows the caller read in its own batch, the selection's grants are read
-        // here in one query and stand in for each grant's first read, as the caller's would.
-        const readAhead = (yield* GrantReadAhead) ?? (yield* selectionGrants(selected));
-        return yield* Effect.forEach(selected, ({ account, provider }) =>
-          Effect.gen(function* () {
-            const credential = yield* resolveAuthorized(
-              account,
-              provider,
-              checked,
-              { contested: false },
-              undefined,
-              recheck,
-            );
-            /** The account as one slot's invocation sends it, under that slot's definition. */
-            return (definition: ProviderDefinition) =>
-              invocationAccount(account, definition, credential, firstPartyClients);
-          }),
-        ).pipe(Effect.provideService(GrantReadAhead, readAhead));
-      }),
-    );
+    Effect.gen(function* () {
+      const supplied = yield* GrantReadAhead;
+      // Without grant rows the caller read in its own batch, the selection's grants are read
+      // here in one query, beside the authority check, and stand in for each grant's first read,
+      // as the caller's would. Nothing is decrypted or returned unless the check passed.
+      const [checked, readAhead] =
+        supplied === undefined
+          ? yield* inOrder(authority, selectionGrants(selected))
+          : [yield* authority, supplied];
+      const recheck = selectionAuthorized(use, selected);
+      return yield* Effect.forEach(selected, ({ account, provider }) =>
+        Effect.gen(function* () {
+          const credential = yield* resolveAuthorized(
+            use.kind,
+            account,
+            provider,
+            checked,
+            { contested: false },
+            undefined,
+            recheck,
+          );
+          /** The account as one slot's invocation sends it, under that slot's definition. */
+          return (definition: ProviderDefinition) =>
+            invocationAccount(account, definition, credential, firstPartyClients);
+        }),
+      ).pipe(Effect.provideService(GrantReadAhead, readAhead));
+    });
   /**
    * The grant rows of the selected accounts that sign in with OAuth, read in one query, by
    * account. An account without a row maps to null, as a missing grant reads.
@@ -3015,7 +3060,15 @@ export const makeOAuth = (
   ) => {
     const recheck = selectionAuthorized(use, selection);
     return Effect.flatMap(recheck, () =>
-      resolveAuthorized(account, provider, undefined, { contested: false }, rejected, recheck),
+      resolveAuthorized(
+        use.kind,
+        account,
+        provider,
+        undefined,
+        { contested: false },
+        rejected,
+        recheck,
+      ),
     ).pipe(
       // A refusal is the storage failure callers that do not distinguish it have always seen.
       Effect.catchTag("AccountUseRefused", () => Effect.fail(new StorageError())),
