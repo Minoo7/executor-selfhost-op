@@ -1,0 +1,17 @@
+decision	status	rationale	evidence_or_gate
+Authorization	PLAN_ONLY	No production reads, stops, backups, builds, promotions or deployment in this task.	Vincent 2026-11-11 20:10 Stockholm
+Application source	FROZEN	experiment/beta40-upstream-first-20261111 at d22ca5ba0026abdb28fca0449f60472a383b1646; later plan commits are docs only.	Immutable upstream e3d989e4b977da51829ba006952c2c764c1f980f
+Production artifact	BLOCKED	Review index is amd64-only; build real ARM plus amd64 with a production header, then freeze the qualified digest.	Production digest and ARM acceptance not assigned
+Honest header	PROPOSED	2.0.0-beta.40-org-instructions-skill-delete-runtime-d22ca5ba0; a tag alias cannot rewrite the review header.	No container-level build-header override
+Credential file upload	DEFERRED_FOR_PRODUCTION	Use upstream exact multiline paste/drop; retain stored credentials.	Explicit prior user choice; include deferral in activation approval
+Account controls	UPSTREAM_NATIVE	Personal/shared creation and app links replace custom ownership conversion and in-list sharing.	Retained-account rehearsal required
+Organization instructions	SHIP	Strict CAS, admin browser saves, member reads, request-scoped MCP guidance, original migration10 identity.	Actual ARM retained-data and initialize/discovery checks
+Skill deletion	SHIP	Fixed reviewed subtree, fresh comparison and expected-revision commit, no automatic deployment.	Preserve active versions and unpublished work
+Transport and cancellation	SHIP_WITH_LIMIT	Bounded outer input and streamed inner hops; existing cancellation binary; mid-transfer cancellation not proven.	Real ARM exact-input/native-disconnect gates
+Baseline	HISTORICAL_NOT_CURRENTLY_PROBED	1677c7860 image1f921aad and repaired Compose checksum b590fc08; do not use older b409 checksum.	Reconfirm after production-inspection authorization
+Geotorget and registry	PRESERVE_REPAIRS	Later report records both repairs and successful calls; beta39 rollback retained them.	Fresh baseline whoami and two natural schedule successes
+Backup	BLOCKED_UNTIL_AUTHORIZED	Snapshot A for rehearsal, then fresh stopped-writer B immediately before activation, with independent off-host checksums.	No fresh production backup exists from planning
+Rollback classifier	EXPLICIT_OUTCOMES	Hard attributable Executor failures request one full-image/full-data rollback; familiar logs alone do not.	0 ACCEPTED;20 ROLLBACK_REQUIRED;30 HOLD_OPERATOR
+Client IP and generic logs	RISK_ACCEPTANCE_REQUIRED	Diagnose or explicitly accept without disabling auth protection or hiding errors.	Baseline/candidate functional correlation; no blanket error grep
+Production data rehearsal	PRIVATE_ARM_ONLY	Deny egress and production routes before copied schedulers start; never copy rehearsal data back.	Private runner and isolation proof not selected
+Production approval	WAITING	Present qualified digests, rehearsal receipts, risks and maintenance window before explicit activation approval.	plans/self-host-beta40.md
