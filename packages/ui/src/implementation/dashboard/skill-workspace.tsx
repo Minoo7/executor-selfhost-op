@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
-import { useAtomSet } from "@effect/atom-react";
+import { useAtomRefresh, useAtomSet } from "@effect/atom-react";
 import { isTextFile, type App, type AppSkillBundle } from "@executor-js/sdk";
 import type { AppSourceView } from "@executor-js/app-management/contracts";
 import { Exit, type Cause } from "effect";
@@ -13,6 +13,7 @@ import {
   Folder01Icon,
   LockKeyIcon,
 } from "@hugeicons/core-free-icons";
+import type { SkillRemoval } from "../../contracts/app-management.ts";
 import type { FailureProps } from "../../contracts/dashboard.ts";
 import { Button } from "../components/button.tsx";
 import { Input } from "../components/input.tsx";
@@ -57,6 +58,7 @@ export function SkillWorkspace<E>({
   const [selection, setSelection] = useState<Selection>();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [creating, setCreating] = useState<Creating>();
+  const [removal, setRemoval] = useState<SkillRemoval>();
   const [dirty, setDirty] = useState(false);
   const leave = () => !dirty || window.confirm("Discard your unsaved changes?");
   const owned: Skill[] = source.files.flatMap((file) => {
@@ -108,7 +110,45 @@ export function SkillWorkspace<E>({
         </span>
         {file !== undefined && <SkillSize contents={[file.content]} className="shrink-0" />}
       </div>
-      <div className="ml-auto flex items-center gap-1">{actions}</div>
+      <div className="ml-auto flex items-center gap-1">
+        {actions}
+        {current?.editable && file !== undefined && (
+          <>
+            {file.path !== "SKILL.md" && (
+              <Button
+                variant="ghost"
+                size="xs"
+                disabled={dirty}
+                title={dirty ? "Save or discard your draft before deleting." : undefined}
+                onClick={() => {
+                  const entry = source.files.find(
+                    (entry) => entry.path === `skills/${current.name}/${file.path}`,
+                  );
+                  if (entry !== undefined) setRemoval({ kind: "file", entry });
+                }}
+              >
+                Delete file
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="xs"
+              disabled={dirty}
+              title={dirty ? "Save or discard your draft before deleting." : undefined}
+              onClick={() => {
+                const prefix = `skills/${current.name}/`;
+                setRemoval({
+                  kind: "folder",
+                  prefix,
+                  entries: source.files.filter((entry) => entry.path.startsWith(prefix)),
+                });
+              }}
+            >
+              Delete skill
+            </Button>
+          </>
+        )}
+      </div>
     </div>
   );
   return (
@@ -248,7 +288,7 @@ export function SkillWorkspace<E>({
               <>
                 {header()}
                 <p className="mb-4 text-xs text-muted-foreground">
-                  This skill is read-only. Ask your agent to update it.
+                  This deployed skill is read-only and remains live until the next deployment.
                 </p>
                 <SkillContent
                   document={{
@@ -263,6 +303,20 @@ export function SkillWorkspace<E>({
           </div>
         )}
       </div>
+      {removal !== undefined && (
+        <RemoveSkillFiles
+          app={app}
+          removal={removal}
+          editing={editing}
+          Failure={Failure}
+          onClose={() => setRemoval(undefined)}
+          onCommitted={(commit) => {
+            setRemoval(undefined);
+            setSelection(undefined);
+            onCommitted({ commit, deploy: false });
+          }}
+        />
+      )}
       {creating !== undefined && (
         <CreateSkillFile
           key={JSON.stringify(creating)}
@@ -490,6 +544,91 @@ function CreateSkillFile<E>({
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RemoveSkillFiles<E>({
+  app,
+  removal,
+  editing,
+  Failure,
+  onClose,
+  onCommitted,
+}: {
+  readonly app: App;
+  readonly removal: SkillRemoval;
+  readonly editing: SkillEditing<E>;
+  readonly Failure: ComponentType<FailureProps<E>>;
+  readonly onClose: () => void;
+  readonly onCommitted: (commit: string) => void;
+}) {
+  const refresh = useAtomRefresh(editing.atoms.workspace(app.id));
+  const remove = useAtomSet(editing.atoms.removeFiles(app.id), { mode: "promiseExit" });
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<Cause.Cause<E>>();
+  const [changed, setChanged] = useState(false);
+  const entries = removal.kind === "file" ? [removal.entry] : removal.entries;
+  const label = removal.kind === "file" ? "Delete file" : "Delete skill";
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !pending) onClose();
+      }}
+    >
+      <DialogContent
+        showCloseButton={!pending}
+        onEscapeKeyDown={(event) => {
+          if (pending) event.preventDefault();
+        }}
+        onPointerDownOutside={(event) => {
+          if (pending) event.preventDefault();
+        }}
+      >
+        <DialogTitle>{label}?</DialogTitle>
+        <DialogDescription>
+          Remove these working-source files. This does not deploy. The live version stays unchanged
+          until you deploy.
+        </DialogDescription>
+        <ul className="max-h-64 overflow-auto text-xs">
+          {entries.map((entry) => (
+            <li key={entry.path}>{entry.path}</li>
+          ))}
+        </ul>
+        {changed && <p role="alert">Source changed. Reload and review the deletion again.</p>}
+        {error && <Failure cause={error} />}
+        <DialogFooter>
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={() => {
+              if (changed || error) refresh();
+              onClose();
+            }}
+          >
+            {changed || error ? "Reload and review" : "Cancel"}
+          </Button>
+          <Button
+            disabled={pending || changed || error !== undefined}
+            loading={pending}
+            onClick={async () => {
+              if (pending) return;
+              setPending(true);
+              const result = await remove({
+                removal,
+                message: `${label}: ${entries.map((entry) => entry.path).join(", ")}`,
+              });
+              setPending(false);
+              if (Exit.isFailure(result)) setError(result.cause);
+              else if (result.value._tag === "FilesChanged") setChanged(true);
+              else onCommitted(result.value.commit);
+            }}
+          >
+            {label}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

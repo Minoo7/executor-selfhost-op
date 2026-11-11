@@ -383,11 +383,11 @@ export function SkillVersion<E>({
       <span className="text-muted-foreground">
         {state.waiting || deployNow
           ? "Saved. Deploying…"
-          : "Saved, but not deployed. Retry to make your changes live."}
+          : "Saved. Not deployed yet. Deploying includes other unpublished changes in this working revision."}
       </span>
       {!state.waiting && !deployed && (
         <Button size="xs" variant="outline" onClick={run}>
-          Retry deploy
+          Deploy
         </Button>
       )}
       {!state.waiting && AsyncResult.isFailure(state) && <Failure cause={state.cause} />}

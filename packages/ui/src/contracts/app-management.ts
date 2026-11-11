@@ -1,12 +1,22 @@
 /** Typed app bindings share reconciliation; products supply their existing client and runtime. */
 import { revalidated } from "./refresh.ts";
-import { isTextFile, type App, type AppId } from "@executor-js/sdk";
+import {
+  isTextFile,
+  sourceFilesEqual,
+  type SourceFile,
+  type App,
+  type AppId,
+} from "@executor-js/sdk";
 import { AppAccess, appManagementApi } from "@executor-js/app-management/contracts";
 import { Array as Arr, Data, Effect, Schema, type Cause } from "effect";
 import type { HttpApiClient } from "effect/http-api";
 import { hydratedResult, requestKey } from "./http.ts";
 import { Atom } from "effect/reactivity";
 import { acknowledge, acknowledgedQuery, readInto } from "./mutations.ts";
+
+export type SkillRemoval =
+  | { readonly kind: "file"; readonly entry: SourceFile }
+  | { readonly kind: "folder"; readonly prefix: string; readonly entries: readonly SourceFile[] };
 
 class OwnedCopy extends Data.Class<{ readonly app: AppId }> {}
 class SourceFileKey extends Data.Class<{
@@ -141,6 +151,40 @@ export const makeAppManagementAtoms = <R, E>(
         }),
     ),
   );
+  const removeFiles = Atom.family((app: AppId) =>
+    runtime.fn((input: { removal: SkillRemoval; message: string }, get) =>
+      Effect.gen(function* () {
+        const api = yield* client;
+        const current = yield* readInto(
+          get,
+          workspace(app),
+          api.source({ params: { ...params, app } }),
+        );
+        const removal = input.removal;
+        const selected = (file: SourceFile) =>
+          removal.kind === "file"
+            ? file.path === removal.entry.path
+            : file.path.startsWith(removal.prefix);
+        const reviewed = removal.kind === "file" ? [removal.entry] : removal.entries;
+        if (!sourceFilesEqual(current.files.filter(selected), reviewed))
+          return { _tag: "FilesChanged" as const };
+        const files = current.files.filter((file) => !selected(file));
+        if (!Arr.isReadonlyArrayNonEmpty(files)) return { _tag: "FilesChanged" as const };
+        const saved = yield* api.commit({
+          params: { ...params, app },
+          payload: { expected: current.revision.commit, files, message: input.message },
+        });
+        acknowledge(get, workspace(app), (previous) => ({
+          ...previous,
+          revision: saved.revision,
+          files,
+        }));
+        get.refresh(source(app));
+        get.refresh(history(app));
+        return { _tag: "Committed" as const, commit: saved.revision.commit };
+      }),
+    ),
+  );
   const deploy = Atom.family((app: AppId) =>
     runtime.fn(
       (
@@ -210,6 +254,7 @@ export const makeAppManagementAtoms = <R, E>(
     history,
     workspace,
     commitFile,
+    removeFiles,
     deploy,
     copy: (from: { readonly app: AppId }) => copies(new OwnedCopy(from)),
     publish,

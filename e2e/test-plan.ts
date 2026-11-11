@@ -109,6 +109,17 @@ const plan = <Name extends string>(scenarios: { readonly [_ in Name]: typeof Tes
 
 /** Scenario names and applicability used by both test declarations and test selection. */
 export const scenarios = plan({
+  skillFileDelete: {
+    fixtures: "actors",
+    file: "skill-file-delete.spec.ts",
+    title:
+      "Skill deletion confirms file and folder removal, rejects changed reviews and preserves undeployed source",
+    targets: {
+      "self-host": scheduled,
+      cloud: scheduled,
+      local: na("Local has no hosted organization actors."),
+    },
+  },
   organizationMcpInstructions: {
     fixtures: "actors",
     file: "organization-mcp-instructions.spec.ts",
