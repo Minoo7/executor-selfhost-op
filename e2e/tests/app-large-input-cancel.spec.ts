@@ -21,7 +21,6 @@ const Message = Schema.Struct({
 });
 const SessionId = Schema.NonEmptyString;
 
-/** One POST to /mcp. The session ID is kept for the next request, not in evidence. */
 const send = <E>(
   credentials: Readonly<Record<string, string>>,
   body: (
@@ -60,7 +59,6 @@ const send = <E>(
     };
   }).pipe(Effect.scoped, Effect.provideService(HttpClient.TracerPropagationEnabled, false));
 
-/** One JSON-RPC message per POST. */
 const post = (
   credentials: Readonly<Record<string, string>>,
   message: object,
@@ -126,7 +124,6 @@ const startSignals = Effect.gen(function* () {
   };
 });
 
-/** A POST whose event stream is read as it arrives: each `data` message, in order. */
 const stream = (
   credentials: Readonly<Record<string, string>>,
   message: object,

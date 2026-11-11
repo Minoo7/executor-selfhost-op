@@ -19,6 +19,8 @@ const inputs = [
   "small-input",
   "a".repeat(35_200_010),
   "aé€😀".repeat(1_000_003),
+  "😀".repeat(600_000),
+  "x" + "😀".repeat(600_000),
   "escaped lone surrogate \ud800",
 ];
 const exercise = (database: boolean, actor: Session, prefix: string) =>
