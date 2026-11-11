@@ -383,9 +383,20 @@ it.live("org instructions refuses a divergent migration identity on a synthetic 
       );
       expect(wrong.journal).toEqual([{ migration_id: 10, name: "e2e_wrong_identity" }]);
       yield* f.start(f.image, copy);
-      const refused = yield* f
-        .request("/health")
-        .pipe(Effect.retry({ schedule: Schedule.spaced("250 millis"), times: 240 }));
+      const refused = yield* f.request("/health").pipe(
+        Effect.tap((response) =>
+          driver("read refused startup response", () => response.arrayBuffer()),
+        ),
+        Effect.tap(() =>
+          f.run(["logs", f.id]).pipe(
+            Effect.filterOrFail(
+              (logs) => logs.includes("Executor product storage could not open"),
+              () => "Product storage refusal has not been observed",
+            ),
+          ),
+        ),
+        Effect.retry({ schedule: Schedule.spaced("250 millis"), times: 240 }),
+      );
       expect(refused.status).toBeGreaterThanOrEqual(500);
       expect(yield* f.run(["logs", f.id])).toContain("Executor product storage could not open");
       yield* f.stop();
