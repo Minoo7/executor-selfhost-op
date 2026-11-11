@@ -16,7 +16,7 @@ Do not copy a running database directory as a substitute. If no safe snapshot ex
 The private retained-data rehearsal must remain egress-isolated. Real Geotorget login and natural Rakazo reconciliation need external egress and may change external state.
 Record those checks as blocked in the isolated copy unless separately approved scoped controls can prevent enrollment/start and protect copied credentials. Do not claim fixture or recorded responses as live provider acceptance.
 
-## Release preparation result at 21:24 Stockholm
+## Initial preparation result before the Depot continuation
 
 The native ARM64 build from frozen source `d22ca5ba0026abdb28fca0449f60472a383b1646` succeeded and is saved in Depot.
 
@@ -27,16 +27,32 @@ The native ARM64 build from frozen source `d22ca5ba0026abdb28fca0449f60472a383b1
 | ARM manifest           | `sha256:1d9ea246761591371fdfe1d3a6b9d6cf5682c675ef1ba644937fd34474f77bc9`        |
 | ARM raw workerd SHA256 | `7634ac29a730e8f100c4b47b1057a734740ad2f7309a8b4398c6e2f7dbf34578`               |
 
-Registry architecture, labels, baked version and pinned workerd contents passed static verification. Runtime HTTP and retained-data checks have **not run** on this artifact.
+Registry architecture, labels, baked version and pinned workerd contents passed static verification. At this initial checkpoint, runtime HTTP and retained-data checks had not run. The Depot continuation below supersedes that status.
 The existing repaired stopped-writer data archive passed checksum/listing verification. Its SHA256 is `ff2a6f3dda35d1346823978f19fe38b3fcea9b2d4f9e6fbf983ce4b85cf5a6e2`, size 870090675 bytes.
 Its local path is `/Users/minoo/m4_projs/executor-selfhost-op/.local/pomerado-dns-20261111/deploy/backup/data-before.tar.gz`.
 It is historical input, not a fresh deployment backup B.
 
 Vincent allowed a new private Daytona probe. It reported private access and blocked network, but booted `x86_64`.
 Native ARM placement could not be established through the available CLI/account API. No secret-bearing data was uploaded and the probe was deleted.
-The native ARM retained-data rehearsal is **BLOCKED**, not passed. No production service was queried or changed.
+At this checkpoint the native ARM retained-data rehearsal was blocked. The completed core Depot journey below supersedes that blocker. No production service was queried or changed.
 Detailed receipts and every requested check's status are in [.local/beta40-arm-production/report.md](../.local/beta40-arm-production/report.md).
 Select or establish native ARM access before resuming. The egress-isolated rehearsal cannot itself prove live Geotorget or registry access.
+
+## Depot native ARM rehearsal result
+
+Vincent proposed Depot after the Daytona probe. SDK sandbox `72njgz00lfvx13g` booted native ARM64, with Docker also reporting `aarch64`.
+Automatic tailnet enrollment and shared Depot cache were disabled. The copied servers used an internal Docker network that refused outbound traffic.
+The candidate passed exact HTTP build identity, health, login HTML and anonymous MCP401 on synthetic and retained data.
+Synthetic authenticated MCP initialize/discovery and four exact digest calls passed, including 35200010 bytes on stateless and SQL-facet paths.
+The retained-data candidate and repeat startup passed. Logical fingerprints matched for 62 of 63 tables, including accounts, apps, links, schedules, org instructions and the journal. Only rateLimit changed.
+All 3325 repository files matched byte-for-byte. Column metadata showed no differences; DDL statements and lock timing were not traced.
+Full restoration from the original verified tar booted beta32 and passed HTTP recovery with preserved key fingerprints.
+Eight restored table fingerprints differed from the earlier post-start baseline. Row-level attribution is incomplete, so full logical rollback acceptance remains open.
+The baseline database exporter also hit its 128 MiB Blob limit on this roughly 981 MB database. Stopped inspection clones used the existing PGlite adapter instead.
+Existing-user sign-in, retained authenticated MCP, live Geotorget/registry, and ARM disconnect acceptance remain unverified.
+No production endpoint or host was accessed. Private copies were removed and the dedicated sandbox was stopped.
+The current report and receipts are [.local/beta40-arm-production/depot-rehearsal-report.md](../.local/beta40-arm-production/depot-rehearsal-report.md).
+This supersedes the earlier runner blocker, not the remaining release gates. No deployment approval is implied.
 
 ## Use this approval sequence
 
@@ -193,7 +209,7 @@ Use the actual authorized MCP resource URL and organization ID from the operator
 
 ## Rehearse the retained data privately
 
-The existing amd64 synthetic rehearsal passed. No actual production-state beta40 rehearsal or ARM runtime acceptance has run yet.
+The original amd64 synthetic rehearsal passed. The later Depot native ARM journey passed core retained-state and HTTP checks on the historical archive. Existing-user authentication, external workflows, complete logical rollback attribution, DDL/index review and native disconnect acceptance remain open. The checklist below describes the remaining qualification contract, not completed execution.
 
 - [ ] Select an approved private ARM64 Docker runner with enough storage. Keep production snapshots off Git, CI artifacts, public Daytona, and Depot builds.
 - [ ] After the explicit snapshot-A authorization, capture a uniquely named rehearsal archive and the **exact production image archive** while the baseline writer is stopped.
@@ -233,10 +249,10 @@ Before activation approval, provide Vincent all of these values. Missing values 
 | Production index and ARM manifest digests      | Built in the authorized preparation. See the exact verified digests in the release preparation result above. ARM runtime qualification remains blocked.                                                                                       |
 | Synthetic ARM baseline and stock ARM controls  | **Not built/selected**. Record both immutable manifest digests and labels before synthetic qualification.                                                                                                                                     |
 | Exact production baseline archive              | Existing off-host `1f921aad...` OCI index, ARM manifest, config and revision verified. No new production snapshot captured.                                                                                                                   |
-| ARM workerd binary hash                        | Raw ARM hash `7634ac29...` derived and matched to image-layer contents. A running-container match remains pending.                                                                                                                            |
-| Private ARM runner and receipts                | Daytona private probe booted x86_64 and was deleted. Native ARM runner not established.                                                                                                                                                       |
+| ARM workerd binary hash                        | Raw ARM hash `7634ac29...` derived and matched to image-layer contents. The native runtime also returned the exact baked header during this rehearsal.                                                                                        |
+| Private ARM runner and receipts                | Depot native ARM rehearsal completed core checks and the sandbox was stopped. Remaining gates are listed in its report.                                                                                                                       |
 | Fresh identity and required baseline workflows | **Not inspected in this planning task**                                                                                                                                                                                                       |
-| Snapshot A and private rehearsal               | Existing stopped-writer archive verified locally. No new snapshot taken; rehearsal not run.                                                                                                                                                   |
+| Snapshot A and private rehearsal               | Historical repaired archive rehearsed privately on ARM. No fresh snapshot A or backup B captured; workflow and logical rollback gates remain.                                                                                                 |
 | Better Auth DDL and locking review             | **Not run**. Supply before/after schema, DDL diff, lock/write-blocking review, timing and repeat/full-restore receipts.                                                                                                                       |
 | Durable image repository and retention         | **Not selected/confirmed**. Record the exact repository/index/ARM manifests used for qualification and deployment.                                                                                                                            |
 | Snapshot destinations and space                | **Not approved**. Name encrypted off-host storage, runner identity, access controls, and the space receipts below before snapshot A.                                                                                                          |
