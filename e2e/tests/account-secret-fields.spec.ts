@@ -186,7 +186,7 @@ const accessibilityTree = Effect.gen(function* () {
   );
 });
 
-/** Drag `text` out of a scratch textarea in `scope` and drop it on `field` with the mouse. */
+/** Drag `text` from a native HTML drag source in `scope` onto `field` with the mouse. */
 const drop = (scope: Locator, field: Locator, text: string) =>
   Effect.gen(function* () {
     const browser = yield* Browser;
@@ -194,14 +194,17 @@ const drop = (scope: Locator, field: Locator, text: string) =>
       const source = page.locator("#drag-source");
       return scope
         .evaluate((element, value) => {
-          const area = document.createElement("textarea");
+          const area = document.createElement("div");
           area.id = "drag-source";
-          area.value = value;
+          area.textContent = value;
+          area.draggable = true;
+          area.addEventListener("dragstart", (event) =>
+            event.dataTransfer?.setData("text/plain", value),
+          );
           area.style.cssText = "font: 16px monospace; padding: 0; width: 12rem; height: 4rem";
           element.append(area);
         }, text)
-        .then(() => source.selectText())
-        .then(() => source.dragTo(field, { sourcePosition: { x: 4, y: 8 } }))
+        .then(() => source.dragTo(field))
         .then(() => source.evaluate((element) => element.remove()));
     });
   });
