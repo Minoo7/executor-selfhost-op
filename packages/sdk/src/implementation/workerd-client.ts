@@ -41,6 +41,7 @@ import { ownsDatabase } from "../contracts/apps.ts";
 import type { EvaluatedCommand } from "@executor-js/app-data/evaluated";
 import { evaluatedDeclarations } from "./evaluated-declarations.ts";
 
+const inputChunkSize = 1_048_576;
 const engineFailure = () => new WorkflowFailure({ reason: "engine", retryable: true });
 const protocolFailure = () => new RuntimeProtocolFailed();
 const json = Schema.decodeUnknownSync(Schema.Json);
@@ -49,14 +50,26 @@ type Callback = (input: unknown) => Promise<unknown>;
 const encodedJson = Schema.fromJsonString(Schema.Json);
 /** App-facing callbacks are scoped to the already-authorized invocation, never looked up by arbitrary IDs. */
 class HostCallbacks extends RpcTarget implements AppHostCallbacks {
+  readonly #input: string;
   readonly #elicit: Callback | null;
   readonly #control: Callback | null;
   readonly #load: () => Promise<string>;
-  constructor(elicit: Callback | null, control: Callback | null, load: () => Promise<string>) {
+  constructor(
+    input: string,
+    elicit: Callback | null,
+    control: Callback | null,
+    load: () => Promise<string>,
+  ) {
     super();
+    this.#input = input;
     this.#elicit = elicit;
     this.#control = control;
     this.#load = load;
+  }
+  async input(offset: number) {
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset >= this.#input.length)
+      throw new Error("Invalid invocation input offset");
+    return this.#input.slice(offset, offset + inputChunkSize);
   }
   async elicit(input: string) {
     if (this.#elicit === null) throw new Error("This invocation cannot ask for input");
@@ -220,6 +233,7 @@ export const connectedWorkerdApps = (blobs: BlobStorage, transport: WorkerdTrans
             workflowControls: capabilities.controls !== null,
           }).pipe(Effect.mapError(protocolFailure));
           const callbacks = new HostCallbacks(
+            encoded,
             capabilities.elicit,
             capabilities.controls,
             async () => encodeLoadedBuild(await capabilities.load()),
@@ -227,7 +241,7 @@ export const connectedWorkerdApps = (blobs: BlobStorage, transport: WorkerdTrans
           return yield* rpc((api) =>
             runnerResult(
               Effect.tryPromise({
-                try: () => api.invoke(encoded, callbacks),
+                try: () => api.invoke(encoded.slice(0, inputChunkSize), encoded.length, callbacks),
                 catch: (cause) => cause,
               }),
             ),

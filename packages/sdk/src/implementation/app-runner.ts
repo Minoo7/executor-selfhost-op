@@ -1,3 +1,4 @@
+import { invocationBody } from "./invocation-body.ts";
 /**
  * The one app Worker runner. It runs beside the Worker Loader on every host: in the Cloud API
  * Worker, and in the trusted apps Worker of self-host and local. It names each Worker, loads it,
@@ -622,7 +623,7 @@ export const makeAppRunner = (host: AppRunnerHost) => {
           Effect.tryPromise({
             try: () =>
               entry.start(
-                options.body,
+                invocationBody(options.body),
                 options.headers,
                 delivery,
                 workflow,
@@ -743,7 +744,7 @@ export const makeAppRunner = (host: AppRunnerHost) => {
             identity,
             cacheNamespace: appCacheNamespace(invocation.build, invocation.hostApi),
             ...(invocation.hostApi === undefined ? {} : { hostApi: invocation.hostApi }),
-            body,
+            body: invocationBody(body),
             headers: invocation.headers,
             write:
               writeOperations.has(command.operation) ||

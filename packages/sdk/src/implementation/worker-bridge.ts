@@ -125,12 +125,14 @@ ${collectGarbage}
 class Invocation extends RpcTarget {
   #controller = new AbortController();
   #dispatch;
+  #body;
   #result;
   #cache;
   #cacheCallback;
   #stubs;
   constructor(bridge, body, headers, elicitation, workflow, controls, cache) {
     super();
+    this.#body = body;
     this.#cacheCallback = cache == null ? null : cache.dup();
     this.#cache = this.#cacheCallback == null ? undefined : bridge.cacheSession?.(this.#cacheCallback);
     const delivery = elicitation == null ? null : elicitation.dup();
@@ -142,22 +144,25 @@ class Invocation extends RpcTarget {
     this.#dispatch = () => {
       const clock = bridge.clock;
       const started = clock?.();
-      return bridge.fetch(new Request("https://app.internal/dispatch", {
-        method: "POST", headers: { ...headers, "content-type": "application/json" }, body, signal: this.#controller.signal
-      }), { ELICITATION: delivery, WORKFLOW: execution, WORKFLOW_CONTROLS: management, CACHE: this.#cache?.cache }).then(response => response.json()).then(value => ({ ok: true, value: dispatched(clock, started, value) }), error => ({ ok: false, error })).finally(() => this.#release());
+      const request = new Request("https://app.internal/dispatch", {
+        method: "POST", headers: { ...headers, "content-type": "application/json" }, body: this.#body, signal: this.#controller.signal
+      });
+      this.#body = request.body;
+      return bridge.fetch(request, { ELICITATION: delivery, WORKFLOW: execution, WORKFLOW_CONTROLS: management, CACHE: this.#cache?.cache }).then(response => response.json()).then(value => ({ ok: true, value: dispatched(clock, started, value) }), error => ({ ok: false, error })).finally(() => this.#release());
     };
   }
-  #release() { for (const stub of this.#stubs) stub?.[Symbol.dispose](); this.#stubs = []; }
+  #releaseBody() { const body = this.#body; this.#body = undefined; if (body instanceof ReadableStream && !body.locked) return body.cancel().catch(() => undefined); }
+  #release() { this.#releaseBody(); for (const stub of this.#stubs) stub?.[Symbol.dispose](); this.#stubs = []; }
   async result() { this.#result ??= this.#dispatch(); const result = await this.#result; if (!result.ok) throw result.error; return result.value; }
   async drain() { await this.#result; await this.#cache?.drain(); this.#cacheCallback?.[Symbol.dispose](); this.#cacheCallback = null; collect(); }
-  async cancel() { this.#controller.abort(); await this.#cache?.cancel(); await this.drain(); }
-  [Symbol.dispose]() { this.#controller.abort(); if (this.#result === undefined) this.#release(); }
+  async cancel() { this.#controller.abort(); await this.#releaseBody(); await this.#cache?.cancel(); await this.drain(); }
+  [Symbol.dispose]() { this.#controller.abort(); this.#releaseBody(); if (this.#result === undefined) this.#release(); }
 }
 export default class extends WorkerEntrypoint {
   ${
     load === "module"
       ? "start(body, headers, elicitation, workflow = null, controls = null, cache = null) { return new Invocation(app, body, headers, elicitation, workflow, controls, cache); }"
-      : "async start(body, headers, elicitation, workflow = null, controls = null, cache = null) { return new Invocation(await loadApp(), body, headers, elicitation, workflow, controls, cache); }"
+      : "async start(body, headers, elicitation, workflow = null, controls = null, cache = null) { try { return new Invocation(await loadApp(), body, headers, elicitation, workflow, controls, cache); } catch (error) { if (body instanceof ReadableStream) await body.cancel().catch(() => undefined); throw error; } }"
   }
   ${retireMethod}
 }`;
@@ -184,16 +189,17 @@ export class ExecutorAppData extends DurableObject {
     const session = cache == null ? undefined : bridge.cacheSession?.(cache);
     if (session) this.#caches.set(id, session);
     const controller = new AbortController();
-    this.#calls.set(id, controller);
+    const request = new Request("https://app.internal/dispatch", {
+      method: "POST", headers: { ...headers, "content-type": "application/json" }, body, signal: controller.signal
+    });
+    this.#calls.set(id, { controller, request });
     try {
       const clock = bridge.clock;
       const started = clock?.();
-      const response = await bridge.fetch(new Request("https://app.internal/dispatch", {
-        method: "POST", headers: { ...headers, "content-type": "application/json" }, body, signal: controller.signal
-      }), { STORAGE: this.#storage, ELICITATION: elicitation, WORKFLOW_CONTROLS: workflows, CACHE: session?.cache });
+      const response = await bridge.fetch(request, { STORAGE: this.#storage, ELICITATION: elicitation, WORKFLOW_CONTROLS: workflows, CACHE: session?.cache });
       return dispatched(clock, started, await response.json());
-    } finally { this.#calls.delete(id); }
+    } finally { this.#calls.delete(id); if (request.body && !request.body.locked) await request.body.cancel().catch(() => undefined); }
   }
   async finish(id) { try { await this.#caches.get(id)?.drain(); } finally { this.#caches.delete(id); collect(); } }
-  async cancel(id) { this.#calls.get(id)?.abort(); await this.#caches.get(id)?.cancel(); this.#caches.delete(id); collect(); }
+  async cancel(id) { const call = this.#calls.get(id); call?.controller.abort(); if (call?.request.body && !call.request.body.locked) await call.request.body.cancel().catch(() => undefined); await this.#caches.get(id)?.cancel(); this.#caches.delete(id); collect(); }
 }`;
