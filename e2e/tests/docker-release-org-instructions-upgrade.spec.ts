@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { Config, Effect, FileSystem, Schedule, Schema } from "effect";
+import { Config, Effect, FileSystem, Schedule, Schema, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
@@ -31,10 +31,27 @@ const fixture = Effect.gen(function* () {
   const data = `${root}/data`;
   yield* fs.makeDirectory(data);
   const processes = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const output = (command: ChildProcess.Command, includeStderr = false) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const child = yield* processes.spawn(command);
+        const [stdout, stderr, code] = yield* Effect.all(
+          [
+            child.stdout.pipe(Stream.decodeText(), Stream.mkString),
+            child.stderr.pipe(Stream.decodeText(), Stream.mkString),
+            child.exitCode,
+          ],
+          { concurrency: "unbounded" },
+        );
+        expect(code, stderr).toBe(0);
+        return includeStderr ? stdout + stderr : stdout;
+      }),
+    );
   const run = (args: readonly string[], env: Record<string, string> = {}) =>
-    processes.string(ChildProcess.make("docker", args, { env, extendEnv: true, stderr: "pipe" }), {
-      includeStderr: args[0] === "logs",
-    });
+    output(
+      ChildProcess.make("docker", args, { env, extendEnv: true, stderr: "pipe" }),
+      args[0] === "logs",
+    );
   const id = `executor-org-upgrade-${randomBytes(8).toString("hex")}`;
   const port = yield* driver(
     "allocate upgrade port",
@@ -56,6 +73,7 @@ const fixture = Effect.gen(function* () {
   const environment = {
     DO_NOT_TRACK: "1",
     PORT: "8080",
+    EXECUTOR_MOTEL_DATA_DIR: "/tmp/executor-motel-data",
     BETTER_AUTH_URL: origin,
     BETTER_AUTH_SECRET: randomBytes(32).toString("hex"),
     EXECUTOR_ENCRYPTION_KEY: randomBytes(32).toString("hex"),
@@ -105,20 +123,22 @@ const fixture = Effect.gen(function* () {
   };
   const authenticate = (setup: boolean) =>
     Effect.gen(function* () {
-      cookie = "";
-      const response = yield* request(
-        setup ? "/api/auth/self-host/setup" : "/api/auth/sign-in/email",
-        "POST",
-        setup
-          ? { ...credentials, name: "Upgrade Owner", organizationName: "Upgrade lab" }
-          : credentials,
-      );
-      expect(response.status, "synthetic owner login").toBe(200);
-      cookie = response.headers
-        .getSetCookie()
-        .map((value) => value.split(";")[0])
-        .join("; ");
-      expect(cookie.length).toBeGreaterThan(0);
+      if (setup || cookie === "") {
+        cookie = "";
+        const response = yield* request(
+          setup ? "/api/auth/self-host/setup" : "/api/auth/sign-in/email",
+          "POST",
+          setup
+            ? { ...credentials, name: "Upgrade Owner", organizationName: "Upgrade lab" }
+            : credentials,
+        );
+        expect(response.status, "synthetic owner login").toBe(200);
+        cookie = response.headers
+          .getSetCookie()
+          .map((value) => value.split(";")[0])
+          .join("; ");
+        expect(cookie.length).toBeGreaterThan(0);
+      }
       const [ownerOrganization] = yield* json(
         Schema.NonEmptyArray(Schema.Struct({ id: Schema.String })),
         "/api/auth/organization/list",
@@ -207,14 +227,13 @@ const fixture = Effect.gen(function* () {
     });
   // Like docker-release.spec.ts, this uses the public PGlite adapter on a stopped export.
   const pglite = (directory: string, archive: string | undefined, sql: string, restore = false) =>
-    processes
-      .string(
-        ChildProcess.make(
-          "node",
-          [
-            "--input-type=module",
-            "--eval",
-            `
+    output(
+      ChildProcess.make(
+        "node",
+        [
+          "--input-type=module",
+          "--eval",
+          `
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync } from 'node:fs';
 const [directory, archive, sql, restore] = process.argv.slice(1);
@@ -231,15 +250,14 @@ try {
   process.stdout.write(JSON.stringify({ table: table.rows[0].name !== null, journal: journal.rows, rows }));
 } finally { await pg.close(); }
 `,
-            directory,
-            archive ?? "",
-            sql,
-            String(restore),
-          ],
-          { extendEnv: true },
-        ),
-      )
-      .pipe(Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(Stored))));
+          directory,
+          archive ?? "",
+          sql,
+          String(restore),
+        ],
+        { extendEnv: true },
+      ),
+    ).pipe(Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(Stored))));
   const inspect = (tag: string, directory = data) =>
     Effect.gen(function* () {
       const archive = yield* exported(tag, directory);
@@ -365,11 +383,17 @@ it.live("org instructions refuses a divergent migration identity on a synthetic 
       );
       expect(wrong.journal).toEqual([{ migration_id: 10, name: "e2e_wrong_identity" }]);
       yield* f.start(f.image, copy);
-      expect((yield* f.run(["wait", f.id])).trim()).not.toBe("0");
-      expect(yield* f.run(["logs", f.id])).toContain("UnsupportedMigrationIdentity");
+      const refused = yield* f
+        .request("/health")
+        .pipe(Effect.retry({ schedule: Schedule.spaced("250 millis"), times: 240 }));
+      expect(refused.status).toBeGreaterThanOrEqual(500);
+      expect(yield* f.run(["logs", f.id])).toContain("Executor product storage could not open");
       yield* f.stop();
       expect(yield* f.inspect(f.image, copy)).toEqual(wrong);
       f.retained(yield* f.inspect(f.baseline), saved);
+      yield* f.boot(f.image);
+      expect(yield* f.read()).toEqual(saved);
+      yield* f.stop();
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
 );
