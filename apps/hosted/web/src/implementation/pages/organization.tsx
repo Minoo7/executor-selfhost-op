@@ -1,3 +1,4 @@
+import { OrganizationMcpInstructionsCard } from "../components/organization-mcp-instructions.tsx";
 import { usePageUrl } from "@executor-js/dashboard-start/page";
 import {
   OrganizationSettingsPending,
@@ -90,6 +91,7 @@ function OrganizationSettings({
         <OrganizationName disabled={pending} />
         <OrganizationIcon disabled={pending} />
         <OrganizationUrl disabled={pending} />
+        <OrganizationMcpInstructionsCard key={organization.organization} disabled={pending} />
         {children}
       </div>
       <OrganizationMembers emailInvitations={emailInvitations} memberLimit={memberLimit} />

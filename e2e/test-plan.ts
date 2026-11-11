@@ -109,6 +109,40 @@ const plan = <Name extends string>(scenarios: { readonly [_ in Name]: typeof Tes
 
 /** Scenario names and applicability used by both test declarations and test selection. */
 export const scenarios = plan({
+  organizationMcpInstructions: {
+    fixtures: "actors",
+    file: "organization-mcp-instructions.spec.ts",
+    title:
+      "Organization MCP instructions persist through browser saves and reach each new session of the same grant",
+    targets: {
+      "self-host": scheduled,
+      cloud: managedCloud,
+      local: na("Local has no hosted organizations."),
+    },
+  },
+  organizationMcpInstructionsIsolation: {
+    fixtures: "actors",
+    file: "organization-mcp-instructions.spec.ts",
+    title:
+      "Organization MCP instructions isolate tenants and discard a draft when switching organizations",
+    targets: {
+      "self-host": na("Self-host permits one organization; tenant isolation requires Cloud."),
+      cloud: managedCloud,
+      local: na("Local has no hosted organizations."),
+    },
+  },
+  organizationMcpInstructionsStorage: {
+    fixtures: "actors",
+    legacyStorage: true,
+    file: "organization-mcp-instructions.spec.ts",
+    title:
+      "Organization MCP instructions survive restart and preserve a draft when storage rejects its save",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("The storage fault requires stopping the scenario-owned PGlite product."),
+      local: na("Local has no hosted organizations."),
+    },
+  },
   storageMigrationDiagnostics: {
     legacyStorage: true,
     file: "storage-migration-diagnostics.spec.ts",
