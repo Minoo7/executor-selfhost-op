@@ -114,7 +114,7 @@ let aborted = 0;
 export default defineApp({}, { tools: router({
  wait: query({ input: object({}) }, async ctx => {
   const stopped = new Promise(resolve => ctx.signal.addEventListener("abort", () => { aborted++; resolve(); }, { once: true }));
-  await ctx.elicit({ message: "Disconnect this client", requestedSchema: { type: "object", properties: {} } });
+  await ctx.elicit({ mode: "form", message: "Disconnect this client", requestedSchema: { type: "object", properties: {} } });
   await stopped;
   return "unexpected result";
  }),
