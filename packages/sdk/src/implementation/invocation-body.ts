@@ -1,4 +1,4 @@
-/** A fresh, lazy byte body for each Workers RPC attempt. The encoder retains split surrogates. */
+/** TextEncoderStream retains split surrogates across chunks. */
 export const invocationBody = (text: string): ReadableStream<Uint8Array> => {
   let offset = 0;
   return new ReadableStream<string>({

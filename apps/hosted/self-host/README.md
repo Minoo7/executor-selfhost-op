@@ -70,7 +70,7 @@ Node ships in the runtime image. Build tools
 and the workspace dependency tree stay in the build stage.
 
 The image runs Executor's build of workerd from
-[UsefulSoftwareCo/workerd](https://github.com/UsefulSoftwareCo/workerd), pinned by
+[Minoo7/workerd](https://github.com/Minoo7/workerd), with the response stream cancellation backport on top of UsefulSoftwareCo’s runtime changes, pinned by
 release and SHA-256 in `workerd.json`; packaging downloads it and fails on any other
 digest. It adds idle-isolate and memory-pressure garbage collection and TCMalloc
 memory release, set by `memory` in the generated `workerd.capnp`. Cloud and local

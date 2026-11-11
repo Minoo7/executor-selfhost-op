@@ -1,4 +1,3 @@
-import { invocationBody } from "./invocation-body.ts";
 /**
  * The one app Worker runner. It runs beside the Worker Loader on every host: in the Cloud API
  * Worker, and in the trusted apps Worker of self-host and local. It names each Worker, loads it,
@@ -10,6 +9,7 @@ import { invocationBody } from "./invocation-body.ts";
  * the Worker Loader's cold-start callback, so a warm call reads and transfers no code. Every
  * request and reply passes through the adapter of the protocol the build's framework speaks.
  */
+import { invocationBody } from "./invocation-body.ts";
 import type { Fetcher, WorkerLoader } from "@cloudflare/workers-types";
 import { Clock, Context, Effect, Exit, Option, Redacted, Result, Schema, Semaphore } from "effect";
 import {
