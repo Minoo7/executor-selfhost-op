@@ -1,6 +1,6 @@
 # Upgrade the self-hosted Executor to beta40
 
-Status is **RELEASE PREPARATION PARTIAL. NO DEPLOY APPROVAL**. Vincent requested this plan on 11 November 2026 at 20:10 Stockholm.
+Status is **OFFLINE ARM QUALIFICATION PASSED. LIVE GATES OPEN. NO DEPLOY APPROVAL**. Vincent requested this plan on 11 November 2026 at 20:10 Stockholm.
 The original plan granted no production permissions. The release-preparation authorization below supersedes only its named gates.
 The target is the upstream-first beta40 code reviewed in the isolated sandbox.
 Do not run the historical beta39 controller. Its broad log gate caused an unnecessary rollback.
@@ -36,7 +36,7 @@ Vincent allowed a new private Daytona probe. It reported private access and bloc
 Native ARM placement could not be established through the available CLI/account API. No secret-bearing data was uploaded and the probe was deleted.
 At this checkpoint the native ARM retained-data rehearsal was blocked. The completed core Depot journey below supersedes that blocker. No production service was queried or changed.
 Detailed receipts and every requested check's status are in [.local/beta40-arm-production/report.md](../.local/beta40-arm-production/report.md).
-Select or establish native ARM access before resuming. The egress-isolated rehearsal cannot itself prove live Geotorget or registry access.
+Native ARM access was subsequently established through Depot. The egress-isolated rehearsal cannot itself prove live Geotorget or registry access.
 
 ## Depot native ARM rehearsal result
 
@@ -53,6 +53,31 @@ Existing-user sign-in, retained authenticated MCP, live Geotorget/registry, and 
 No production endpoint or host was accessed. Private copies were removed and the dedicated sandbox was stopped.
 The current report and receipts are [.local/beta40-arm-production/depot-rehearsal-report.md](../.local/beta40-arm-production/depot-rehearsal-report.md).
 This supersedes the earlier runner blocker, not the remaining release gates. No deployment approval is implied.
+
+## Follow-up qualification result
+
+The completed follow-up supersedes the open offline checks in the first Depot report above.
+Private native ARM sandbox `793bfw0850n685q` used disabled tailnet enrollment/cache and an internal Docker network. Private copies and credential files were removed, and the sandbox finished at `2026-11-11T22:01:01.851Z`.
+No production request, external workflow call, computer enrollment/start, or deployment ran.
+
+- Cold restoration matched all 63 table fingerprints, columns, indexes, migration journal and inspected rows before any serve boot.
+- An old-image-only control reproduced the eight running-state table differences. Row classification of that control, candidate/repeat and restored-old boots found no unexpected changes or workflow-account relationship violations. This does not reconstruct historical rows that the first run did not retain.
+- Supported existing-user login passed on both copied images. Personal access tokens were created and deleted through the supported API, sessions signed out, and copied credentials removed. Saved instructions/revision matched the cold snapshot. Authenticated MCP initialize returned exact combined guidance on both images; candidate stateless discovery also passed.
+- Five distinct named native ARM release cases passed across retained runs, covering four migration journeys and native dropped-response cancellation. The initial migration invocation passed three and failed the divergent-identity case at an insufficient readiness predicate. Its corrected named rerun passed. The original failure remains recorded; this was not one clean five-case invocation.
+- The E2E-only fix consumes the startup response and waits for the actual storage-refusal log with the existing retry count and spacing and unchanged 180-second scenario timeout. Each attempt now also reads logs. Frozen application/build inputs remain unchanged. Full local `bun run check` passed. Native ARM static typecheck was unavailable because `tsc-rs` 0.1.0 has no published linux-arm64 package; native ARM runtime cases did run.
+
+The exact archived ARM `1677c7860` image supplied the synthetic migration baseline, avoiding a redundant source build. The stock ARM control manifest was `sha256:aa79860449bb041b249f2b09a0bbeeb0d97c9205501c974c4d6c49eaff4fd654`. Its upstream source-label correspondence remains unproven; it is a compatibility control only.
+No captured column/index changes appeared in the retained journey. DDL statements and lock timing were not traced, so the DDL/locking review remains incomplete.
+
+The complete candidate OCI archive is `.local/beta40-arm-followup/candidate-oci.tar`, 80138240 bytes, SHA256 `9723b366b021b19515ef8537e2c654a13458d37bcd0a523d315bccf456b261c2`.
+All 31 referenced OCI blobs were verified. Depot retention could not be confirmed with the available user token. This archive preserves the artifact but is not an automatic deployment fallback. Recheck registry availability or validate an approved import/publication path before activation.
+The source bundle `.local/beta40-arm-followup/release-d22ca5ba0.bundle` has SHA256 `bb17ec762bb7d06c083b4efc891c1d109a7cbf1580b94edb4d1e66505f47d02b`; it requires upstream base `e3d989e4b977da51829ba006952c2c764c1f980f`.
+
+**Deployment remains blocked on live workflow qualification, fresh identity/backup B, approved encrypted off-host capacity, controller qualification and the remaining approval-record fields.** This Mac repeatedly reached ENOSPC and cannot currently satisfy the backup-space gate. Do not stop the production writer until destination capacity is verified.
+A full copied install starts schedules immediately, with no supported quiet-serve option. Do not enable broad private egress to obtain Geotorget/Rakazo acceptance. A separately approved constrained integration path is required; the two stopped computers remain untouched.
+Cancellation during input transfer remains unproven. The client-IP warning, generic script-termination logs and baseline exporter Blob limit remain documented limitations.
+
+Full receipts, test titles and first failures are in [.local/beta40-arm-followup/report.md](../.local/beta40-arm-followup/report.md) and `qualification-summary.json` beside it.
 
 ## Use this approval sequence
 
@@ -72,7 +97,7 @@ The original planning task stopped at the document. The authorized preparation r
 ## Freeze the source and build an ARM production artifact
 
 - [ ] Use branch `experiment/beta40-upstream-first-20261111` and freeze application source at `d22ca5ba0026abdb28fca0449f60472a383b1646`.
-      Later plan-only commits do not change that code revision. Preserve the canonical beta39 branch at `eadfc28`.
+      Later documentation and E2E-only commits do not change that application/build revision. Preserve the canonical beta39 branch at `eadfc28`.
 - [ ] Record immutable upstream beta40 base `e3d989e4b977da51829ba006952c2c764c1f980f`.
 - [ ] Preserve that code revision in an approved remote release ref or a checksum-verified Git bundle before deployment.
       Publication belongs to authorized release preparation. Do not push or merge `main`, or rebuild from a moving branch head.
@@ -110,17 +135,14 @@ depot build --project 5884x6f4tn --platform linux/arm64 \
       Verify Depot retention or copy the index and every referenced manifest/blob to a durable approved repository.
       Verify the destination digest after any copy. Never assume a registry copy or rebuild preserves a digest.
 - [ ] Run actual ARM Linux containers on an operator-controlled, non-production runner.
-      The runner is not selected yet. Record its identity before approval. Do not send production data or keys to the public Daytona review sandbox or a Depot build.
+      The completed Depot runners and isolation receipts are recorded above. Record a new approved runner if further qualification is needed. Do not send production data or keys to the public Daytona review sandbox or a Depot build.
       If a private ARM runner is unavailable, stop qualification.
 - [ ] Run the five named Docker migration/disconnect cases and the exact-input checks against the production-tagged artifact.
       Record test titles, counts, image digests, logs, and build headers. Run only named scenarios.
       BuildKit `RUN` smoke tests and the verified gzip hashes alone do not establish ARM container acceptance.
-- [ ] Supply all three distinct ARM images required by the migration spec before those five cases run.
-      Build a **synthetic qualification baseline** from source `1677c7860872be67d214ad6b52d6d46b24d2fdec` using its complete Dockerfile and an honest qualification header.
-      Record its ARM manifest digest and source label. The existing `10023ab...` synthetic baseline is amd64-only and cannot fill this slot.
-      Select and record the official stock beta40 ARM manifest digest for the stock-control slot, and record its reported version/label without claiming unproven source correspondence.
-      Set `EXECUTOR_E2E_DOCKER_IMAGE`, `EXECUTOR_E2E_DOCKER_ORG_INSTRUCTIONS_BASELINE_IMAGE`, and `EXECUTOR_E2E_DOCKER_ORG_INSTRUCTIONS_STOCK_IMAGE` to those qualified ARM references.
-      The exact production `1f921aad...` image is a separate input obtained only with snapshot A, not a prerequisite requiring unapproved production access.
+- [x] Supply all three distinct ARM images required by the migration spec.
+      The verified archived production ARM image supplied the baseline. The candidate and stock-control manifest digests are recorded above and in `.local/beta40-arm-followup/stock-arm-image.json`.
+      Synthetic migration fixtures used these images without accessing production. The amd64-only `10023ab...` baseline was not used.
 - [ ] Derive the expected ARM workerd binary SHA256 by decompressing the verified `linux-arm64` archive pinned in `workerd.json`.
       Its gzip SHA256 is `f22cf953782ba645e45dbab96d5a1f9cf429389c8e7da840793448068db26ce9`.
       Record the derived raw hash, and match it against `/app/workerd` in the ARM candidate. Do not use the amd64 raw hash `129cc102...`.
@@ -209,7 +231,7 @@ Use the actual authorized MCP resource URL and organization ID from the operator
 
 ## Rehearse the retained data privately
 
-The original amd64 synthetic rehearsal passed. The later Depot native ARM journey passed core retained-state and HTTP checks on the historical archive. Existing-user authentication, external workflows, complete logical rollback attribution, DDL/index review and native disconnect acceptance remain open. The checklist below describes the remaining qualification contract, not completed execution.
+The amd64 and native ARM synthetic journeys passed. The native ARM follow-up also passed retained existing-user authentication, exact cold restoration, row-level background-drift controls and native disconnect acceptance. External workflows and DDL/locking review remain open. Historical archive qualification does not replace fresh identity verification or deployment backup B. The checklist below describes the full contract; the result sections above distinguish completed work.
 
 - [ ] Select an approved private ARM64 Docker runner with enough storage. Keep production snapshots off Git, CI artifacts, public Daytona, and Depot builds.
 - [ ] After the explicit snapshot-A authorization, capture a uniquely named rehearsal archive and the **exact production image archive** while the baseline writer is stopped.
@@ -246,16 +268,16 @@ Before activation approval, provide Vincent all of these values. Missing values 
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Application source                             | Frozen `d22ca5ba0026abdb28fca0449f60472a383b1646`, or a separately reviewed replacement SHA                                                                                                                                                   |
 | Production build header                        | Proposed `2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64`                                                                                                                                                                                   |
-| Production index and ARM manifest digests      | Built in the authorized preparation. See the exact verified digests in the release preparation result above. ARM runtime qualification remains blocked.                                                                                       |
-| Synthetic ARM baseline and stock ARM controls  | **Not built/selected**. Record both immutable manifest digests and labels before synthetic qualification.                                                                                                                                     |
+| Production index and ARM manifest digests      | Built in the authorized preparation. See the exact verified digests in the release preparation result above. Native ARM offline runtime qualification passed; live workflow gates remain.                                                     |
+| Synthetic ARM baseline and stock ARM controls  | Archived exact ARM baseline and stock ARM control supplied; see the follow-up result and image receipts.                                                                                                                                      |
 | Exact production baseline archive              | Existing off-host `1f921aad...` OCI index, ARM manifest, config and revision verified. No new production snapshot captured.                                                                                                                   |
 | ARM workerd binary hash                        | Raw ARM hash `7634ac29...` derived and matched to image-layer contents. The native runtime also returned the exact baked header during this rehearsal.                                                                                        |
-| Private ARM runner and receipts                | Depot native ARM rehearsal completed core checks and the sandbox was stopped. Remaining gates are listed in its report.                                                                                                                       |
+| Private ARM runner and receipts                | Both private native ARM Depot runners finished; copies and credential files removed. Follow-up offline gates passed.                                                                                                                          |
 | Fresh identity and required baseline workflows | **Not inspected in this planning task**                                                                                                                                                                                                       |
-| Snapshot A and private rehearsal               | Historical repaired archive rehearsed privately on ARM. No fresh snapshot A or backup B captured; workflow and logical rollback gates remain.                                                                                                 |
-| Better Auth DDL and locking review             | **Not run**. Supply before/after schema, DDL diff, lock/write-blocking review, timing and repeat/full-restore receipts.                                                                                                                       |
-| Durable image repository and retention         | **Not selected/confirmed**. Record the exact repository/index/ARM manifests used for qualification and deployment.                                                                                                                            |
-| Snapshot destinations and space                | **Not approved**. Name encrypted off-host storage, runner identity, access controls, and the space receipts below before snapshot A.                                                                                                          |
+| Snapshot A and private rehearsal               | Historical repaired archive rehearsed privately on ARM. No fresh snapshot A or backup B captured; live workflow gates remain. Cold restoration and row-level controls passed.                                                                 |
+| Better Auth DDL and locking review             | Captured columns/indexes equal; repeat and full restore passed. DDL statements and lock/write-blocking timing were not traced; complete review before approval.                                                                               |
+| Durable image repository and retention         | Depot retention unconfirmed. Complete verified OCI archive preserved locally; validate registry availability or an approved durable copy before activation.                                                                                   |
+| Snapshot destinations and space                | **Open capacity gate**. Mac hit ENOSPC. Name and verify adequate encrypted off-host storage and free-space reserve before any production stop.                                                                                                |
 | Verifier authentication                        | Record authorized actor/resource/scopes and validity through the window plus 30 minutes for recovery. If TTL is opaque, require a successful validity probe and an operator available to renew it. Do not send email codes or broaden grants. |
 | Dependency controls and fixture                | Approve the per-workflow controls below and the private fixture source, ownership, visibility and removal policy. Unavailable controls force HOLD for ambiguous network failures.                                                             |
 | Risks accepted or fixed                        | Each item in the risk table below                                                                                                                                                                                                             |
@@ -548,10 +570,10 @@ docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
 
 | Risk                                        | Proposed disposition before deployment                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Review image is amd64-only                  | Must close. Build and qualify real ARM containers from the frozen source.                                                                                                                                                                                                                                                                                                                                                                   |
+| Review image is amd64-only                  | Closed for offline acceptance. Native ARM artifact and five distinct named release cases passed; live integration remains open.                                                                                                                                                                                                                                                                                                             |
 | Production-state migrations                 | Must close. Private retained-data rehearsal, full restore test, and fresh backup B/off-host checksums. No DDL no-op claim.                                                                                                                                                                                                                                                                                                                  |
 | Client-IP/Better Auth warning               | Conditional acceptance for this upgrade if baseline and candidate auth work without a regression. The native host overwrites `x-executor-client-ip` from its TCP peer, runtime auth consumes it, and schema setup uses different options. The exact warning source/bucketing needs diagnosis. Do not trust arbitrary forwarded headers, disable rate limits, or invent an env fix. A trust-policy fix needs a new reviewed source/artifact. |
-| Cancellation during input transfer          | Explicit residual uncertainty. Completed-transfer MCP cancellation, slot reuse, and native disconnect passed. Qualify them on ARM. Do not claim mid-transfer coverage. If Vincent requires it as a release gate, add an observable held-transfer E2E before promotion.                                                                                                                                                                      |
+| Cancellation during input transfer          | Explicit residual uncertainty. Completed-transfer MCP cancellation, slot reuse, and native disconnect passed. Native ARM dropped-response acceptance passed. Do not claim mid-transfer coverage. If Vincent requires it as a release gate, add an observable held-transfer E2E before promotion.                                                                                                                                            |
 | Generic workerd termination/timeouts        | Accept observation with the attribution rule, not a clean-log promise. Investigate separately. Crashes, resource exhaustion, or attributable workflow failures still request rollback.                                                                                                                                                                                                                                                      |
 | Telemetry trace-export warning              | Recheck local collector/export health during qualification. Capture failures without changing the telemetry service. Obtain explicit acceptance if still unresolved.                                                                                                                                                                                                                                                                        |
 | Credential file upload absent               | Explicit production deferral. Upstream multiline paste/drop is the approved replacement. No saved secret is deleted.                                                                                                                                                                                                                                                                                                                        |
