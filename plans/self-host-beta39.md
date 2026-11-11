@@ -1,242 +1,223 @@
-# Upgrade the customized self-host to beta.39
+# Prepare and deploy the beta.39 production-baseline port
 
-Prepared on 2026-11-10 and verified through 2026-11-11. No deployment is authorized
-by this document.
+Updated 2026-11-11. The current request authorizes building, publishing and read-only
+route inspection only. Do not execute the production commands below without a
+separate deployment instruction. No production service was stopped or changed.
 
-The source merge is `9baa000e3abc275051e313efa3b4d0ffc43895de` on
-`upgrade/executor-beta39-20261110`. Its parents are deployed `f664b14bd` and
-upstream tag `executor@2.0.0-beta.39`, commit `e97eecce65f809de0ce1077ab2de8b17d967f4f7`.
-Later commits on this branch contain the handoff records only.
+## Candidate and retained behavior
 
-## Published image
-
-```text
-registry.depot.dev/5884x6f4tn:2.0.0-beta.39-org-instructions-9baa000e3
-```
-
-The image includes native `linux/amd64` and `linux/arm64` builds. The build version
-is `2.0.0-beta.39-org-instructions-9baa000e3`. The OCI revision names the source
-merge above. No `latest` tag was moved.
-
-The registry-verified immutable reference is:
+The source commit is `865206c42468e1c38f4272209cf682a66566c958` on
+`upgrade/executor-beta39-20261110`. It extends the beta.39 merge `9baa000e3` with
+all running-production changes from `1677c7860872be67d214ad6b52d6d46b24d2fdec`.
+Subsequent documentation commits do not change the image source.
 
 ```text
-registry.depot.dev/5884x6f4tn@sha256:68ff0fed49249b3228939faebeaec1a30e8421b05d2813c4ecaa5702e2f7e900
+registry.depot.dev/5884x6f4tn:2.0.0-beta.39-org-instructions-skill-delete-865206c42
+Executor-Build: 2.0.0-beta.39-org-instructions-skill-delete-865206c42
 ```
 
-Direct registry reads verified the index contains both architectures and each
-image config carries the expected build version and source revision. Platform
-manifest digests are recorded in `self-host-beta39-image.json`.
+Use the immutable index digest in `self-host-beta39-image.json` for activation.
+The former `2.0.0-beta.39-org-instructions-9baa000e3` image is superseded because
+it omits the production skill-delete feature. Neither image has been deployed.
 
-[Depot build hxnvnwjm68](https://depot.dev/orgs/4z8l73c27s/projects/5884x6f4tn/builds/hxnvnwjm68)
-uses the complete `apps/hosted/self-host/Dockerfile`, including the custom source,
-dashboard, app framework, Motel, native Go host and pinned workerd. It does not use
-the beta.19 overlay Dockerfiles.
+The complete `f664b14bd..1677c7860` source delta contains two files:
 
-Build again from the source merge commit:
+- `packages/ui/src/contracts/app-management.ts` permits null content to delete
+  a file or a folder and its descendants through the existing source commit API.
+- `packages/ui/src/implementation/dashboard/skill-editor.tsx` adds confirmed
+  Delete file and Delete skill actions, followed by deployment of the saved source.
+
+Both were carried over. Beta.39's nonempty source type also requires a guard
+before sending filtered files. An attempted empty-source commit is rejected.
+Other retained behavior includes all 17 organization-instructions feature files,
+account ownership conversion, app-account sharing, credential file upload, both
+large-input RPC hops, and exact private HTTPS origins. Effect stays at 4.0.1 with
+its custom dynamic-instructions patch. The custom workerd pin stays at
+`Minoo7/workerd`, `v1.20260918.1-executor.cfdad918ad`, with both architecture hashes.
+
+Folder deletion retains production semantics. It checks the working revision
+between its read and write, but does not reject descendant edits already present
+when that read begins. This port does not change that behavior.
+
+The earlier beta.39 merge resolved only two test-registration conflicts, retaining
+both organization-instructions scenarios and upstream migration/telemetry coverage.
+Private HTTPS and credential PR #2 were already in the deployed ancestry.
+Skill deletion is now included by explicit instruction. No other optional branch
+was merged. The original skill-delete branch's stored patch was not merged as a
+separate repository history.
+
+## Proven current route and baseline
+
+Read-only inspection and a unique request proved this route on 2026-11-11:
+
+```text
+executor.planasolutions.ai → DNS A 100.87.129.61
+  → shared-proxy-owner Tailscale identity, managed by tsdproxy on cluster
+  → executor proxy, 443/https → http://127.0.0.1:4400
+  → executor-tailscale network namespace → executor-host in container executor
+```
+
+`/opt/tsdproxy/config/proxies.yaml` maps the hostname to provider `owner-shared`,
+DNS target `100.87.129.61`, and the loopback backend. A GET to
+`/__routeproof_00cb77de159040acbc6b809040866bfd` returned 307 through the hostname.
+Cluster's tsdproxy log recorded that exact path, hostname, proxy, port and status.
+Three current assets matched through the hostname and loopback by byte count and
+SHA-256. `self-host-beta39-route.json` records those fingerprints.
+
+The route uses tsdproxy, not the sidecar's Serve/Funnel route, which exposes only
+`/mcp`. SSH refusal at `100.87.129.61:22` does not mean there is another Executor
+host there. DNS resolves to a Tailscale address; unrestricted Internet access was
+not established.
+
+The running baseline is:
+
+| Parameter               | Confirmed value                                                                |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| Host                    | `cluster`, `100.79.50.99`                                                      |
+| Container               | `executor`, `73717f869eac62257d9b05064b16b108f157862da7b8d55a190f27008869e637` |
+| Image                   | `executor-org-instructions:skill-delete-1677c7860-arm64`                       |
+| Source revision         | `1677c7860872be67d214ad6b52d6d46b24d2fdec`                                     |
+| Image ID                | `sha256:1f921aadddfee82de5fc796430bb1a83db963d4a95a048bcb1ac058eb051d6bb`      |
+| Compose project/service | `executor` / `executor`                                                        |
+| Compose file            | `/root/executor-skill-delete-20261104/docker-compose.after.yml`                |
+| Data volume             | `executor_executor-v2-data`, local Docker driver                               |
+| Mount                   | `/app/data`                                                                    |
+| Network                 | `network_mode: service:tailscale`                                              |
+| Existing start time     | `2026-11-09T13:52:50.251328166Z`                                               |
+
+Compose calls the volume `executor-v2-data` with `external: true` and explicit
+`name: executor_executor-v2-data`. Do not substitute an unprefixed volume or let
+Compose create a new one. The file contains the existing tailscale and otel-sink
+services. Do not recreate either service.
+
+The baseline image itself bakes the misleading f664 build string. Its Compose
+service has no `EXECUTOR_BUILD_VERSION` environment entry or env_file. This corrects
+the earlier inference that a container-level override caused the old header.
+The new image bakes its honest version. Keep manual header overrides absent.
+
+## Verification and image construction
+
+The full static check includes typecheck and dependency-patch validation:
+
+```sh
+bun run format
+bun run check
+bun run e2e:prepare
+bun run e2e:self-host --workers 2 --test-name 'Skill deletion confirms|Skill editor saves minimal|Organization MCP instructions|App accounts show sharing|Account creators convert|App RPC delivers|Credential files preserve PEM'
+```
+
+Eight scenarios passed across seven spec files. The one Cloud-only tenant-isolation
+case is inapplicable to single-organization self-host. The new deletion scenario
+checks canceled confirmations, rejection of a changed file, committed and deployed
+single-file deletion, nested folder deletion, and preservation of unrelated and
+similarly prefixed skills. It waits for persisted source changes rather than a
+transiently hidden loading list.
+
+Evidence is in `.local/beta39-skill-delete/` and
+`.local/e2e/2026-11-11T07-39-51.223Z-self-host-61ea74/`.
+Earlier test-authoring and typecheck failures remain in the evidence directory.
+The prior source-port report also records native host tests, credential privacy
+checks and migration diagnostics. No production data was used for testing.
+
+The published immutable image was started on both Linux architectures in
+[Depot smoke build 8rbnshggck](https://depot.dev/orgs/4z8l73c27s/projects/5884x6f4tn/builds/8rbnshggck).
+Both returned healthy responses and the honest skill-delete build header. No
+`EXECUTOR_BUILD_VERSION` override was supplied. A BusyBox helper was added only
+to the test layer. BuildKit's injected `unix:` OTLP variables were unset there
+because Executor expects HTTP exporter endpoints. The image itself was unchanged.
+This verifies packaged startup through BuildKit, not a production deployment.
+
+[Synthetic upgrade build 68zpk0b7hn](https://depot.dev/orgs/4z8l73c27s/projects/5884x6f4tn/builds/68zpk0b7hn)
+used an amd64 source build of `1677c7860` as its real baseline. It created an
+owner, organization, instructions and an app source fixture through public HTTP
+routes, then committed deletion of a skill reference. Beta.39 preserved that
+state, performed a folder deletion, and retained it across repeat startup and
+image-only rollback to the baseline runtime. Restoring the stopped-writer snapshot
+returned the original file-deletion state and org revision. This covers synthetic
+state, not production credentials, deployed app bundles or retained workflows.
+The driver and logs are in `.local/beta39-skill-delete/upgrade-context/` and
+`upgrade-acceptance.log`.
+
+The private proposed Compose copy is
+`.local/beta39-skill-delete/docker-compose.beta39.candidate.private.yml`.
+An object comparison verified that it changes only Executor's image and keeps the
+header override absent; all other services and settings match the source file.
+It has not been installed on cluster.
+
+The complete source Dockerfile builds the product, browser assets, app framework,
+Motel, native Go host and custom workerd for amd64 and arm64. It uses neither
+beta.19 overlays nor an official image without our source changes:
 
 ```sh
 depot build --project 5884x6f4tn --platform linux/amd64,linux/arm64 \
   --file apps/hosted/self-host/Dockerfile \
-  --build-arg EXECUTOR_BUILD_VERSION=2.0.0-beta.39-org-instructions-9baa000e3 \
-  --label org.opencontainers.image.revision=9baa000e3abc275051e313efa3b4d0ffc43895de \
-  --label org.opencontainers.image.version=2.0.0-beta.39-org-instructions-9baa000e3 \
-  --save --save-tag 2.0.0-beta.39-org-instructions-9baa000e3 .
+  --build-arg EXECUTOR_BUILD_VERSION=2.0.0-beta.39-org-instructions-skill-delete-865206c42 \
+  --label org.opencontainers.image.revision=865206c42468e1c38f4272209cf682a66566c958 \
+  --label org.opencontainers.image.version=2.0.0-beta.39-org-instructions-skill-delete-865206c42 \
+  --save --save-tag 2.0.0-beta.39-org-instructions-skill-delete-865206c42 .
 ```
 
-The old automation published `4z8l73c27s.registry.depot.dev/executor-selfhost`.
-This candidate uses Depot's project registry above. The old f664 deployment report
-records an image transferred between hosts, rather than a registry publication.
-
-This command does not promise the same digest. The inherited Dockerfile uses a
-floating distroless base and live apt repositories. Deploy the verified digest,
-rather than rebuilding it during approval.
-
-The authoritative digest above was read directly from the registry after Depot
-finished publishing. Depot's intermediate descriptor and exported manifest-list
-digests differ from that final registry index. Both architecture configs and the
-CLI's saved-image listing independently agree with the registry reference.
-
-[Depot documents](https://depot.dev/docs/registry/overview) project-level retention
-for `--save` images, with Unlimited as the default. The current project's setting
-could not be inspected with the available user token. Reconfirm image availability
-before deployment; pulling does not extend a configured retention period.
-
-## Retained changes
-
-| Change                                           | Port result                                                                                                                                                                                                     |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Organization MCP instructions, `f664b14bd`       | All 17 feature files retained, including the journaled migration, API, admin UI, dynamic MCP instructions, Effect patch, and E2E coverage.                                                                      |
-| Account ownership controls, `10c99cb`            | Personal/shared conversion, creator authorization, stale-revision checks, and credential/link retention preserved.                                                                                              |
-| Both large-input RPC hops, `10c99cb`             | Callback slices on the outer hop and stream transport on the inner hop preserved.                                                                                                                               |
-| Credential file upload, `8ff584b` and follow-ups | File controls, exact multiline content, size/read validation, privacy, and validation invalidation preserved.                                                                                                   |
-| App-account sharing, `637f2e1`                   | Existing deployed sharing badges and controls preserved.                                                                                                                                                        |
-| Private HTTPS origins, `92b017f`                 | Upstream already has the same exact-origin allowlist implementation.                                                                                                                                            |
-| Custom workerd, `d67a030c`                       | `Minoo7/workerd` release `v1.20260918.1-executor.cfdad918ad` retained with both architecture hashes. Beta.39 still uses the older `caf569c512` binary without this downstream response-stream cancellation fix. |
-
-The earlier preservation merges `80d70c0a` and `c154ba08` were inspected. The
-merge has two conflicts, both resolved by retaining both sets of registrations:
-
-- `e2e/test-plan.ts` retains organization-instructions scenarios and upstream
-  storage-migration diagnostics.
-- `e2e/ci-selection.ts` retains organization-instructions selection and upstream
-  hosted request telemetry selection.
-
-No product implementation required a manual conflict resolution. In particular,
-upstream account protocol handling and credential repair advice remain present.
-Effect remains **4.0.1**. Its deployed custom patch and workerd pin are unchanged.
-All 22 installed dependency patches passed `patches:check`.
-
-## Optional branches remain separate
-
-| Branch or PR                                                                                       | Upstream beta.39                                                  | Treatment                                                                                            |
-| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `fix/beta19-private-https-origins`, [PR #3](https://github.com/Minoo7/executor-selfhost-op/pull/3) | Covers the private HTTPS allowlist behavior.                      | No new merge. Its source history was already in deployed f664 through `af7bfde`.                     |
-| `feat/skill-file-delete`                                                                           | Does not implement the proposed deletion UI.                      | No merge. This branch stores `patches/skill-file-delete.patch` and has unrelated history.            |
-| `build/org-instructions-skill-delete`                                                              | Does not implement the proposed deletion UI.                      | No merge. The two-file addition on top of f664 remains excluded.                                     |
-| `fix/app-account-sharing`                                                                          | Does not cover the custom app-list sharing controls.              | No new merge. Already ancestral to deployed f664, so its behavior is retained.                       |
-| [PR #2](https://github.com/Minoo7/executor-selfhost-op/pull/2)                                     | Partial overlap in multiline privacy, but no file upload control. | PR #2 is credential-file upload, not app-account sharing. Its code is already deployed and retained. |
-
-The separate deletion implementation can delete a whole skill folder with
-`base: null`; it does not reject intervening descendant changes. That deserves
-review before any later decision to add it.
-
-## Verification
-
-All of these completed successfully:
-
-```sh
-bun install --frozen-lockfile
-bun run format
-bun run check
-bun run typecheck
-bun run auth:security
-bun run e2e:check
-bun run e2e:prepare
-bun run e2e:self-host --workers 2 --test-name 'Organization MCP instructions|App accounts show sharing|Account creators convert|App RPC delivers|Credential files preserve PEM'
-bun run e2e:self-host --workers 1 --test-name 'failed executor upgrades report a safe SQLSTATE'
-(cd apps/hosted/self-host/native && go test ./...)
-```
-
-Eleven self-host scenarios passed across eight spec files. The additional focused
-run exercised exact multiline secret transport, the accessibility privacy check,
-paste/drop editing, webhook signing secrets, and the credential-host disclosure.
-The Cloud-only tenant
-isolation case is intentionally inapplicable to a single-organization self-host.
-No Cloud suite or production-data acceptance was run. Existing Effect diagnostic
-warnings remain; they did not fail the completed checks.
-
-The first typecheck and patch check started before installation finished, and the
-first E2E attempt started before test npm archives were prepared. Those attempts
-failed during setup. The retained logs distinguish them from the successful runs.
-
-Local evidence is under `.local/beta39/`. Focused E2E evidence is under
-`.local/e2e/2026-11-10T22-50-08.963Z-self-host-d196f4/`, and migration diagnostics
-under `.local/e2e/2026-11-10T22-51-44.499Z-self-host-682137/`.
-Credential privacy evidence is under
-`.local/e2e/2026-11-10T23-02-16.822Z-self-host-b9a53d/`.
-
-Both published Linux architectures passed an isolated startup/header smoke check
-in Depot build `m5fdtsdkc6`, using the immutable image as the base and adding only
-a BusyBox test helper. Each ran its packaged entrypoint and native host on fresh
-synthetic data, returned a healthy response, and served the exact expected
-`Executor-Build` header. This is a BuildKit execution check, not `docker run` or
-production client acceptance. See `.local/beta39/image-smoke-clean-env.log`.
-
-The first image test inherited BuildKit's `unix:` OTLP trace endpoint, which
-Executor correctly rejects as a non-HTTP endpoint. A diagnostic copy printed the
-underlying schema failure. Removing those injected OTLP variables in the test
-process made the original published image pass without a product change. Earlier
-smoke helper failures and all resulting logs are retained.
-
-A separate amd64 retained-data check built f664 from source in Depot build
-`881fxx0sb2`, then exercised both packaged runtimes against one synthetic data
-directory in build `nnt7lnq6ls`. Public HTTP calls created an owner, organization,
-and instruction additions on f664. The same session, organization, text and
-revision survived the beta.39 upgrade. A candidate update survived repeat startup.
-The f664 runtime reopened the candidate-written fixture successfully, and a
-stopped-writer snapshot restore returned the original saved revision and text.
-See `.local/beta39/upgrade-acceptance.log` and its Go HTTP driver and Dockerfile in
-`.local/beta39/upgrade-context/`. These checks used synthetic data, not production
-accounts, credentials, repositories or retained workflows.
+A rebuild does not promise the same digest because the inherited Dockerfile has
+live apt repositories and a floating distroless base. Use the verified index,
+not a rebuild, during deployment. Direct registry reads are authoritative because
+Depot's intermediate export descriptors may differ from the final registry index.
+[Depot's registry documentation](https://depot.dev/docs/registry/overview) describes
+project retention for saved images. The current project's setting remains
+uninspected with the available user token; recheck availability before deployment.
 
 ## Migration and rollback boundaries
 
-Beta.32 to beta.39 adds no SDK schema versions or hosted product migration steps.
-SDK storage remains **4.0.16**. The existing deployed custom hosted step
-`10_org_mcp_instructions` and its `hosted_org_mcp_instructions` table remain intact.
-Recorded steps are not replayed on a normal upgrade.
+SDK storage remains 4.0.16. Beta.32 to beta.39 adds no SDK schema version or hosted
+product step. Existing `10_org_mcp_instructions` remains registered and journaled.
+Skill deletion adds no database migration.
 
-Better Auth and its plugins move from **1.7.5 to 1.7.16**. Startup calls its dynamic
-schema migrator, which may add missing tables, columns or indexes based on existing
-state. Auth DDL can commit before a later product startup failure. No pending SQL
-was computed against production because production access was prohibited.
+Better Auth and plugins advance from 1.7.5 to 1.7.16. Its dynamic startup migrator
+can add missing tables, columns or indexes, and auth DDL can commit independently
+of later product startup. No pending SQL was calculated against production.
+Rollback must retain the exact skill-delete baseline image, original configuration,
+and complete stopped-writer snapshot. Do not substitute the older f664 image.
+A restore discards post-snapshot writes; retain failed candidate data separately.
+`EXECUTOR_DATA_STEPS=report` does not suppress schema migration.
+Image-only rollback passed for the synthetic fixture, but the production plan
+still restores the full pre-upgrade snapshot because production-state compatibility
+has not been established.
 
-An image-only rollback passed on the synthetic fixture above. Compatibility with
-all production data and live workflows is unproven. The recovery plan
-uses the exact old image, original configuration, and complete stopped-writer
-pre-upgrade volume. Recovery discards post-snapshot writes; retain the failed
-candidate's data separately. `EXECUTOR_DATA_STEPS=report` does not suppress schema
-migrations.
+## Approved deployment session only
 
-## Confirm the current deployment after approval
+Reconfirm the host, source revision, image ID, mount and route immediately before
+activation. Stop if any changed. Use the existing Compose project and exact file.
+Old Portainer stack IDs and definitions are historical, not the current file.
 
-The user identifies the current host as `shared-proxy-owner`, `100.87.129.61`, and
-the volume as `executor-v2-data` mounted at `/app/data`. These were not inspected.
-No SSH, Docker, restart, backup, or volume operation was run there.
-
-Historical October 29 records describe a **different host**, `cluster`, with
-container `executor`, Portainer stack 1 at endpoint 3,
-`/data/compose/1/docker-compose.yml`, volume `executor_executor-v2-data`, Tailscale
-and telemetry sidecars, and `executor-health.timer`. Those names and IDs must not
-be reused as current facts.
-
-The following commands are proposed for a later, approved operator session on the
-current host. They are not a runnable deployment until the actual owner and
-configuration have been identified. Do not run `docker compose down` or recreate
-the Tailscale sidecar.
-
-```sh
-sudo docker ps -a --filter volume=executor-v2-data \
-  --format '{{.ID}} {{.Names}} {{.Image}}'
-sudo docker volume inspect executor-v2-data
-sudo docker inspect "$CONTAINER" --format '{{json .Config.Labels}}'
-sudo systemctl list-timers --all | rg 'executor|watchtower|update'
-```
-
-Privately capture the complete container inspection, original compose or Portainer
-stack and environment, exact image ID/digest, network aliases, labels, mount paths,
-and every writer/watchdog. Container inspection can contain secrets. Do not print
-it into chat. Determine `CONTAINER`, `COMPOSE_FILE`, `COMPOSE_PROJECT`,
-`EXECUTOR_SERVICE`, and `BACKUP_DIR` from that inspection.
-
-If Portainer owns the stack, use its current stack API and preserve its Env array.
-Do not use an independent Compose invocation that would bypass that ownership.
-
-## Back up the stopped writer before activation
-
-Run these sections in one Bash session with root access after separately approving
-deployment. First complete the image pre-pull below while the old writer is still
-running. The pull token is entered privately or transferred through the existing secret mechanism.
-It is not a production application secret.
+Run the following in one root Bash session on cluster only after new approval.
+Resolve the candidate's immutable index from `self-host-beta39-image.json`.
+Supply Depot's pull token privately. On a workstation,
+`depot pull-token --project 5884x6f4tn` can generate it.
 
 ```sh
 set -euo pipefail
 umask 077
-DATA_VOLUME=executor-v2-data
-IMAGE=registry.depot.dev/5884x6f4tn@sha256:68ff0fed49249b3228939faebeaec1a30e8421b05d2813c4ecaa5702e2f7e900
-BUILD=2.0.0-beta.39-org-instructions-9baa000e3
-ROLLBACK_IMAGE=executor-rollback:pre-beta39-20261110-9baa000e3
-test -n "$CONTAINER" && test -n "$BACKUP_DIR"
+COMPOSE_PROJECT=executor
+COMPOSE_FILE=/root/executor-skill-delete-20261104/docker-compose.after.yml
+EXECUTOR_SERVICE=executor
+DATA_VOLUME=executor_executor-v2-data
+BUILD=2.0.0-beta.39-org-instructions-skill-delete-865206c42
+IMAGE=registry.depot.dev/5884x6f4tn@sha256:962cd475cb48f2e9c389982642f84051918e42d7add6942f9763f1f489baab53
+BACKUP_DIR=/opt/executor/backups/beta39-skill-delete-865206c42
+ROLLBACK_IMAGE=executor-rollback:1677c7860-before-beta39-865206c42
+CONTAINER=$(docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" ps -q "$EXECUTOR_SERVICE")
+test -n "$CONTAINER"
+test "$(docker inspect "$CONTAINER" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = 1677c7860872be67d214ad6b52d6d46b24d2fdec
+OLD_IMAGE_ID=$(docker inspect "$CONTAINER" --format '{{.Image}}')
+test "$OLD_IMAGE_ID" = sha256:1f921aadddfee82de5fc796430bb1a83db963d4a95a048bcb1ac058eb051d6bb
 docker login registry.depot.dev --username x-token --password-stdin < "$DEPOT_PULL_TOKEN_FILE"
 docker pull "$IMAGE"
-docker image inspect "$IMAGE" --format '{{.Os}}/{{.Architecture}} {{index .Config.Labels "org.opencontainers.image.revision"}}'
+test "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = 865206c42468e1c38f4272209cf682a66566c958
 mkdir -m 700 "$BACKUP_DIR"
-docker inspect "$CONTAINER" > "$BACKUP_DIR/container-before.json"
-OLD_IMAGE_ID=$(docker inspect "$CONTAINER" --format '{{.Image}}')
+docker inspect "$CONTAINER" > "$BACKUP_DIR/container-before.private.json"
+cp -p "$COMPOSE_FILE" "$BACKUP_DIR/docker-compose.before.private.yml"
 printf '%s\n' "$OLD_IMAGE_ID" > "$BACKUP_DIR/image-before.id"
 if docker image inspect "$ROLLBACK_IMAGE" >/dev/null 2>&1; then
-  echo 'Choose an unused rollback tag before proceeding.' >&2
+  echo 'Choose an unused rollback tag.' >&2
   exit 1
 fi
 docker tag "$OLD_IMAGE_ID" "$ROLLBACK_IMAGE"
@@ -245,9 +226,10 @@ test -d "$DATA_DIR" && test ! -L "$DATA_DIR"
 stat -c '%u %g %a' "$DATA_DIR" > "$BACKUP_DIR/data-before.mode"
 ```
 
-Back up the original deployment definition and environment privately into
-`BACKUP_DIR`. Disable the **confirmed** watchdog/update mechanisms first. Preserve
-their previous enabled/active state for later restoration. Then:
+Privately preserve any externally supplied keys and other persistent mounts.
+Confirm all writers and Executor-specific watchdogs first. Record their existing
+states and suspend only confirmed Executor watchdogs during the maintenance.
+Do not change tsdproxy, Tailscale, telemetry or other services.
 
 ```sh
 docker stop --time 30 "$CONTAINER"
@@ -257,30 +239,19 @@ tar --numeric-owner --xattrs --acls -C "$DATA_DIR" -cpf - . |
   gzip -1 > "$BACKUP_DIR/data-before.tar.gz"
 gzip -t "$BACKUP_DIR/data-before.tar.gz"
 tar -tzf "$BACKUP_DIR/data-before.tar.gz" >/dev/null
+stat -c '%s' "$BACKUP_DIR/data-before.tar.gz"
 (cd "$BACKUP_DIR" && sha256sum image-before.tar.gz data-before.tar.gz > SHA256SUMS)
 (cd "$BACKUP_DIR" && sha256sum --check SHA256SUMS)
 ```
 
-Also verify that no host process writes the mount directory. Copy the backup to a
-separate machine and verify its checksum before activation. The archive includes
-the database, repositories, generated auth/encryption keys, and other `/app/data`
-contents. Preserve externally supplied keys and other configured persistent
-mounts too. Do not regenerate keys or reset the database.
+Also confirm that no host process writes the data directory. Copy the complete
+backup and private configuration off-host and verify the same archive checksums
+there before activation. Do not reset databases or regenerate encryption keys.
 
-## Activate through the existing deployment owner
-
-The preceding pre-pull must complete before the writer is stopped. On a workstation,
-`depot pull-token --project 5884x6f4tn` generates a private token for that step.
-Confirm the platform matches the host and the revision is
-`9baa000e3abc275051e313efa3b4d0ffc43895de` before activation.
-
-Change only Executor's image in the original deployment definition to the
-published image's immutable index digest recorded with the image evidence.
-Preserve all environment entries, volume mappings, networks, sidecars, and restart
-settings. An explicitly configured old `EXECUTOR_BUILD_VERSION` must be updated
-to `$BUILD`, because a container environment entry overrides the image default.
-
-For a confirmed Compose-owned installation, after updating its original file:
+Update only `services.executor.image` in the existing Compose file to `$IMAGE`.
+Leave `EXECUTOR_BUILD_VERSION` absent from its environment. Keep all other values,
+volume mappings, services and network settings unchanged. A private proposed Compose
+copy can be prepared locally for review; it is not an applied production change.
 
 ```sh
 docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" \
@@ -298,24 +269,21 @@ done
 test "$ready" = 1
 docker exec "$CONTAINER" executor-host health
 curl --fail --silent --show-error --dump-header "$BACKUP_DIR/headers-after.txt" \
-  https://executor.planasolutions.ai/ -o /dev/null
+  https://executor.planasolutions.ai/health -o "$BACKUP_DIR/health-after.json"
 grep -Fi "executor-build: $BUILD" "$BACKUP_DIR/headers-after.txt"
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://executor.planasolutions.ai/org/executor/mcp)" = 401
 ```
 
-For confirmed Portainer ownership, update the current stack via its supported API
-with the modified `StackFileContent`, unchanged `Env`, `PullImage: false`, and
-`Prune: false` after pre-pulling. Historical stack/endpoint IDs are not usable.
-Resolve its replacement container ID again through that stack's confirmed service
-labels, then apply the same bounded health wait before checking the header.
+Verify that the login page loads, inspect candidate logs, and verify stored org
+instructions through an authorized API/MCP session if one is available. Anonymous
+401 is expected and must not be bypassed. Check representative credential-backed
+calls and skill deletion on approved fixtures before calling customer acceptance
+complete. Restore only the recorded Executor watchdog states after acceptance.
 
-Verify login, existing organization instructions through a new MCP session,
-representative account links and credential use, and the large-input path before
-restoring the confirmed health watchdog. A health response or header alone does
-not establish real-client acceptance.
+## Immediate rollback on activation or verification failure
 
-## Roll back without overwriting candidate evidence
-
-Stop the confirmed watchdog and all candidate writers. Validate the backup:
+Stop confirmed Executor watchdogs and candidate writers. Do not start the old
+image on production data modified by the candidate; restore the snapshot too.
 
 ```sh
 (cd "$BACKUP_DIR" && sha256sum --check SHA256SUMS)
@@ -323,14 +291,6 @@ docker stop --time 30 "$CONTAINER"
 test -z "$(docker ps -q --filter "volume=$DATA_VOLUME")"
 docker load -i "$BACKUP_DIR/image-before.tar.gz"
 test "$(docker image inspect "$ROLLBACK_IMAGE" --format '{{.Id}}')" = "$(cat "$BACKUP_DIR/image-before.id")"
-```
-
-Preserve candidate data before restoring. For a confirmed ordinary local Docker
-volume, the following uses a sibling directory on the same filesystem. Stop if
-the mount is external or this layout does not apply.
-
-```sh
-test -d "$DATA_DIR" && test ! -L "$DATA_DIR"
 FAILED_DIR="${DATA_DIR}.candidate-$(date -u +%Y%m%dT%H%M%SZ)"
 test ! -e "$FAILED_DIR"
 mv "$DATA_DIR" "$FAILED_DIR"
@@ -339,20 +299,15 @@ read -r DATA_UID DATA_GID DATA_MODE < "$BACKUP_DIR/data-before.mode"
 chown "$DATA_UID:$DATA_GID" "$DATA_DIR"
 chmod "$DATA_MODE" "$DATA_DIR"
 tar --numeric-owner --xattrs --acls -xzpf "$BACKUP_DIR/data-before.tar.gz" -C "$DATA_DIR"
+cp -p "$BACKUP_DIR/docker-compose.before.private.yml" "$COMPOSE_FILE"
+docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" \
+  up -d --no-deps --force-recreate "$EXECUTOR_SERVICE"
+CONTAINER=$(docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" ps -q "$EXECUTOR_SERVICE")
 ```
 
-Restore the original deployment definition and environment, selecting
-`$ROLLBACK_IMAGE`, then recreate only Executor through its
-confirmed owner. Use the same Compose command above only for Compose ownership.
-Resolve the recreated container ID again and wait for its health as above.
-Verify the old build header, health, original instructions and a representative
-credential-backed call before restoring watchdogs. Keep both archives and the
-candidate directory until recovery is accepted.
-
-## Historical evidence
-
-Local records inspected for build/deployment history:
-
-- `/Users/minoo/.t3/scratch/2026-10-29-handoff-find-the-lost-check-e511ed75/deployment-upgrade-evidence/deployment-candidate.md`
-- The same directory's `deployment-live.md`, `deploy_verified.py`, and
-  `Dockerfile.arm64-artifacts`.
+Use the bounded health wait above. Confirm the restored image's actual ID and
+1677c7860 revision, not just its misleading f664 header. Recheck identity,
+organization instructions, representative credentials and original skill deletion.
+Restore watchdog states only after acceptance. Retain both archives and the
+candidate directory. The directory move assumes the confirmed ordinary local
+Docker volume, not a remote driver or nonstandard mount.

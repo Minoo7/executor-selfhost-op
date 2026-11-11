@@ -1,42 +1,48 @@
 {
-  "image": "registry.depot.dev/5884x6f4tn:2.0.0-beta.39-org-instructions-9baa000e3",
-  "digest": "sha256:68ff0fed49249b3228939faebeaec1a30e8421b05d2813c4ecaa5702e2f7e900",
-  "sourceRevision": "9baa000e3abc275051e313efa3b4d0ffc43895de",
-  "buildVersion": "2.0.0-beta.39-org-instructions-9baa000e3",
-  "depotBuild": "https://depot.dev/orgs/4z8l73c27s/projects/5884x6f4tn/builds/hxnvnwjm68",
+  "image": "registry.depot.dev/5884x6f4tn:2.0.0-beta.39-org-instructions-skill-delete-865206c42",
+  "digest": "sha256:962cd475cb48f2e9c389982642f84051918e42d7add6942f9763f1f489baab53",
+  "sourceRevision": "865206c42468e1c38f4272209cf682a66566c958",
+  "buildVersion": "2.0.0-beta.39-org-instructions-skill-delete-865206c42",
+  "depotBuild": "https://depot.dev/orgs/4z8l73c27s/projects/5884x6f4tn/builds/w1w1njzcd2",
+  "productionBaseline": "1677c7860872be67d214ad6b52d6d46b24d2fdec",
   "platforms": [
     {
       "os": "linux",
       "architecture": "amd64",
-      "manifest": "sha256:d136bf255c5580721ab95fc5637fd0fae409123c1a1f1de8933c66275737d204"
+      "manifest": "sha256:d9b0ff5b14e4d9c145373bb203b81c8034b11ae7277ddd25cc543a7761e8df7f"
     },
     {
       "os": "linux",
       "architecture": "arm64",
-      "manifest": "sha256:8954fc9273f6bce97881714e3d99303f4795e0ed7ad4d86f002e494dfc2f0751"
+      "manifest": "sha256:138893fc217a2ca56efe647a0f86eb4c3a62c1b2876223d0ae38d30572cf1edb"
     }
   ],
   "startupVerification": {
-    "method": "BuildKit RUN of published image with BusyBox helper and injected OTLP variables unset",
-    "build": "https://depot.dev/orgs/4z8l73c27s/projects/5884x6f4tn/builds/m5fdtsdkc6",
+    "method": "BuildKit RUN using immutable image with BusyBox helper; injected unix OTLP endpoints unset",
+    "build": "https://depot.dev/orgs/4z8l73c27s/projects/5884x6f4tn/builds/8rbnshggck",
     "platforms": ["linux/amd64", "linux/arm64"],
-    "expectedHeader": "Executor-Build: 2.0.0-beta.39-org-instructions-9baa000e3",
+    "manualBuildVersionOverride": false,
     "result": "passed"
   },
   "syntheticUpgradeVerification": {
-    "build": "https://depot.dev/orgs/4z8l73c27s/projects/5884x6f4tn/builds/nnt7lnq6ls",
-    "baselineSource": "f664b14bd4ff447e5c9c708371f25b71b9583377",
     "platform": "linux/amd64",
+    "baselineSource": "1677c7860872be67d214ad6b52d6d46b24d2fdec",
+    "baselineBuild": "https://depot.dev/orgs/4z8l73c27s/projects/5884x6f4tn/builds/vfr3wcsc1w",
+    "build": "https://depot.dev/orgs/4z8l73c27s/projects/5884x6f4tn/builds/68zpk0b7hn",
     "retainedState": [
       "owner session",
       "organization",
-      "MCP instruction additions",
-      "MCP instruction revision"
+      "instruction text and revision",
+      "app identity and source commit",
+      "deleted skill reference",
+      "nested skill source and neighboring skills"
     ],
     "checks": [
+      "baseline1677c7860 fixture creation",
       "upgrade",
+      "candidate skill-folder source deletion",
       "repeat candidate startup",
-      "image-only rollback on candidate-written synthetic data",
+      "image-only rollback on candidate-written synthetic state",
       "stopped-writer snapshot restore"
     ],
     "result": "passed"

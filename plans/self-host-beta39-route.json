@@ -1,0 +1,55 @@
+{
+  "verdict": "VERIFIED",
+  "observedAt": "2026-11-11T07:32:00Z",
+  "hostname": "executor.planasolutions.ai",
+  "dnsAddress": "100.87.129.61",
+  "proxy": {
+    "host": "cluster",
+    "container": "tsdproxy",
+    "configuration": "/opt/tsdproxy/config/proxies.yaml",
+    "provider": "owner-shared",
+    "tailscaleHostname": "shared-proxy-owner",
+    "listener": "443/https",
+    "target": "http://127.0.0.1:4400"
+  },
+  "request": {
+    "path": "/__routeproof_00cb77de159040acbc6b809040866bfd",
+    "publicStatus": 307,
+    "matchedLogHost": "executor.planasolutions.ai",
+    "matchedLogProxy": "executor",
+    "matchedLogStatus": 307
+  },
+  "backend": {
+    "host": "cluster",
+    "tailscaleAddress": "100.79.50.99",
+    "container": "executor",
+    "containerId": "73717f869eac62257d9b05064b16b108f157862da7b8d55a190f27008869e637",
+    "image": "executor-org-instructions:skill-delete-1677c7860-arm64",
+    "imageId": "sha256:1f921aadddfee82de5fc796430bb1a83db963d4a95a048bcb1ac058eb051d6bb",
+    "sourceRevision": "1677c7860872be67d214ad6b52d6d46b24d2fdec",
+    "networkNamespace": "executor-tailscale",
+    "volume": "executor_executor-v2-data",
+    "mount": "/app/data",
+    "composeFile": "/root/executor-skill-delete-20261104/docker-compose.after.yml",
+    "unchangedStartedAt": "2026-11-09T13:52:50.251328166Z"
+  },
+  "assetComparisons": [
+    {
+      "name": "index-ChigAIkW.js",
+      "bytes": 309878,
+      "sha256": "acf83f86084ff46401bf6ea5290565475ae52f583f54a42b887c10f00bafb1da"
+    },
+    {
+      "name": "globals-a6oj2SOq.css",
+      "bytes": 158591,
+      "sha256": "639bce46e3ab247831043d93646ba4fd4ba493c513baf6df6fb4bd9b28e30a31"
+    },
+    {
+      "name": "organization-BcuBBg33.js",
+      "bytes": 432632,
+      "sha256": "2fa8902bb1df7346848bdc100d7579686cb47ba07fee71cd9b77c8574d8c10cf"
+    }
+  ],
+  "internetReachability": "Not proven; hostname resolves to Tailscale address.",
+  "productionMutations": []
+}
