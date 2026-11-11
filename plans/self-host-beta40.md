@@ -97,7 +97,7 @@ The original planning task stopped at the document. The authorized preparation r
 ## Freeze the source and build an ARM production artifact
 
 - [ ] Use branch `experiment/beta40-upstream-first-20261111` and freeze application source at `d22ca5ba0026abdb28fca0449f60472a383b1646`.
-      Later documentation and E2E-only commits do not change that application/build revision. Preserve the canonical beta39 branch at `eadfc28`.
+      Later documentation, E2E and top-level operator-tool commits do not change that application/build revision. Preserve the canonical beta39 branch at `eadfc28`.
 - [ ] Record immutable upstream beta40 base `e3d989e4b977da51829ba006952c2c764c1f980f`.
 - [ ] Preserve that code revision in an approved remote release ref or a checksum-verified Git bundle before deployment.
       Publication belongs to authorized release preparation. Do not push or merge `main`, or rebuild from a moving branch head.
@@ -428,6 +428,33 @@ tar -tzf "$OFFHOST_DIR/data-before.tar.gz" >/dev/null
 - [ ] Keep the writer stopped between backup B and activation. If transfer fails or the pre-activation budget expires, verify/resume the original baseline and reschedule.
       No data restore is needed before the candidate opens data. Never advance the controller merely because a snapshot file exists.
 
+## Prepare a separate Compose candidate
+
+The bounded preparer is implemented at [scripts/self-host/prepare-compose-candidate.py](../scripts/self-host/prepare-compose-candidate.py).
+It is an operator tool outside the frozen image's Docker COPY inputs. It neither installs its output nor starts a service.
+Use only a reviewed private source with its expected SHA256 and the original project/environment context.
+The tool reads that source without following a source-file symlink, resolves the exact bytes through real Docker Compose with every profile enabled, and requires the entire resolved configuration to differ only at `services.executor.image`.
+It writes only a new mode-0600 candidate and `<output>.receipt.json` under a private operator-owned directory outside the project. Existing output or receipt paths are refused. The receipt is published last; a candidate without its receipt is incomplete.
+No resolved environment values or raw Compose errors are emitted or retained. References and hash metadata in the receipt are not authentication evidence.
+
+```bash
+python3 -I scripts/self-host/prepare-compose-candidate.py \
+  --source "$COMPOSE_FILE" --source-sha256 "$REVIEWED_COMPOSE_SHA" \
+  --project-directory "$PROJECT_DIR" --project-name "$COMPOSE_PROJECT" \
+  --old-image "$OLD_IMAGE_REF" --new-image "$IMAGE" \
+  --output "$STAGE_DIR/candidate/compose.private.yml"
+```
+
+The private candidate directory must exist with mode 0700. Run only after the separately approved source/context capture; no live configuration was read to qualify this tool.
+The image scalar must be plain, unquoted and occur exactly once, with no duplicate reference even in a comment. A trailing comment on its own line is retained.
+To prevent include/extends resolution without implementing another YAML parser, the tool conservatively refuses those raw words or any backslash anywhere in the source. This also refuses harmless comments/escaped values. If the approved source needs wider syntax, stop for review rather than changing its bytes to pass.
+The proof covers one explicit source file only. It does not cover an implicit override, a multi-file `-f` set or inherited `COMPOSE_FILE`. Before activation, require Compose labels/context to name exactly the reviewed explicit file and use that same file set for resolution and recreation. Otherwise stop for review.
+Post-resolution source hash/file-identity checks detect drift but do not establish a concurrency guarantee. The future installer must recheck source bytes, resolution context, backup-B bindings and approval independently.
+
+Three named real CLI scenarios passed locally with Docker CLI 28.3.3 and Compose 2.39.4, using a nonexistent Docker socket. Final qualified script SHA256 is `66b21ca94f3bee85845554a685ad7304ca8d1241d0225e29d0094e4d755de660`, also recorded in the decisions log and `.local/beta40-controller-design/qualification.json`. They cover exact CRLF/comment preservation, original relative path/environment resolution, private output/receipt, semantic neighbour protection, source drift, mutable tags, ambiguous inputs, source/output symlinks, collisions and secret-safe errors. Removing the semantic-delta guard made the neighbour-refusal case fail; the guard was restored. Full `bun run check` passed.
+The inactive-profile shared-anchor probe initially reproduced an unsafe preparation. Adding `--profile '*'` to the semantic proof made it refuse the neighbour change. The environment fixture now requires its secret variable, so missing project `.env` context fails instead of comparing two empty values.
+These CLI checks do not qualify Linux installation, atomic live replacement, backup/off-host handoff, the ARMED controller or any workflow verifier. Those remain separate gates. Receipts and first harness failures are in `.local/beta40-controller-design/`. Release workflow triggers and POSIX/Python prerequisites could not be checked because this checkout lacks `.github/`; no CI execution claim is made.
+
 ## Activate only Executor
 
 - [ ] Stage a byte-preserving candidate Compose file that changes only `services.executor.image` to the approved digest.
@@ -441,7 +468,7 @@ tar -tzf "$OFFHOST_DIR/data-before.tar.gz" >/dev/null
 - [ ] The qualified activation script must prepare candidate bytes from the saved original, replacing exactly one plain image scalar matching `OLD_IMAGE_REF` with `IMAGE`.
       Refuse ambiguous YAML or multiple matches. Compare resolved JSON and require only `services.executor.image` to differ.
       Keep every other byte unchanged, including other services. Preserve file ownership/mode on a same-directory temporary file, recheck the live checksum, then atomically rename it over the Compose file.
-      This recipe is a specification for that script, not an implemented installer.
+      The separate candidate preparer above implements byte generation and semantic proof only. Atomic live installation and backup-B/controller guards remain unimplemented; this activation recipe is still a specification.
 - [ ] Before changing Compose or starting the candidate, require backup phase B and a matching approved run ID, verified local/off-host manifests, and the approved digest.
       Write an activation receipt containing that run ID, backup-manifest hash, candidate digest and activation time.
       Persist controller state `ARMED` with a deadline no later than the approved window end or 15 minutes after activation, whichever comes first.
