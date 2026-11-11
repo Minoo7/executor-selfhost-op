@@ -639,7 +639,27 @@ layer(HostedLive, { excludeTestServices: true })("Organization MCP instructions"
           expect(text).not.toContain("e2e_unavailable_instructions");
           expect(text).not.toContain("SqlError");
           expect(text).not.toContain("hosted_org_mcp_instructions");
-          expect(response.status >= 400 || !text.includes('"result"')).toBe(true);
+          if (response.status < 400) {
+            const messages = response.headers["content-type"]?.startsWith("text/event-stream")
+              ? text
+                  .split("\n")
+                  .filter((line) => line.startsWith("data: ") && line.length > 6)
+                  .map((line) => line.slice(6))
+              : [text];
+            const replies = yield* Effect.forEach(messages, (message) =>
+              Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(message),
+            );
+            expect(replies).toContainEqual(
+              expect.objectContaining({
+                jsonrpc: "2.0",
+                id: 1,
+                error: expect.objectContaining({
+                  code: expect.any(Number),
+                  message: expect.any(String),
+                }),
+              }),
+            );
+          }
           const evidence = yield* Evidence;
           yield* evidence.json(`instructions-fail-closed-${method.replace("/", "-")}.json`, {
             status: response.status,
