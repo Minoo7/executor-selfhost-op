@@ -433,10 +433,36 @@ index 615a9f9..7874d1c 100644
  //# sourceMappingURL=McpSchema.js.map
 \ No newline at end of file
 diff --git a/dist/ai/McpServer.d.ts b/dist/ai/McpServer.d.ts
-index 63727e7..4d600ec 100644
+index 63727e7..2a4ce5c 100644
 --- a/dist/ai/McpServer.d.ts
 +++ b/dist/ai/McpServer.d.ts
-@@ -256,6 +256,39 @@ export declare const layerStdio: (options: {
+@@ -176,7 +176,7 @@ export declare class McpServer extends McpServer_base {
+ export declare const run: (options: {
+     readonly name: string;
+     readonly version: string;
+-    readonly instructions?: string | undefined;
++    readonly instructions?: string | Effect.Effect<string> | undefined;
+     readonly description?: string | undefined;
+     readonly websiteUrl?: string | undefined;
+     readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined;
+@@ -217,7 +217,7 @@ export declare const run: (options: {
+ export declare const layer: (options: {
+     readonly name: string;
+     readonly version: string;
+-    readonly instructions?: string | undefined;
++    readonly instructions?: string | Effect.Effect<string> | undefined;
+     readonly description?: string | undefined;
+     readonly websiteUrl?: string | undefined;
+     readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined;
+@@ -249,13 +249,46 @@ export declare const layer: (options: {
+ export declare const layerStdio: (options: {
+     readonly name: string;
+     readonly version: string;
+-    readonly instructions?: string | undefined;
++    readonly instructions?: string | Effect.Effect<string> | undefined;
+     readonly description?: string | undefined;
+     readonly websiteUrl?: string | undefined;
+     readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined;
      readonly protocols: Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter>;
      readonly extensions?: ServerExtensions | undefined;
  }) => Layer.Layer<McpServer | McpServerClient, Cause.IllegalArgumentError, Stdio>;
@@ -476,6 +502,15 @@ index 63727e7..4d600ec 100644
  /**
   * Registers a Streamable HTTP MCP endpoint at `options.path`.
   *
+@@ -290,7 +323,7 @@ export declare const layerStdio: (options: {
+ export declare const layerHttp: (options: {
+     readonly name: string;
+     readonly version: string;
+-    readonly instructions?: string | undefined;
++    readonly instructions?: string | Effect.Effect<string> | undefined;
+     readonly description?: string | undefined;
+     readonly websiteUrl?: string | undefined;
+     readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined;
 @@ -298,6 +331,11 @@ export declare const layerHttp: (options: {
      readonly protocols: Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter>;
      readonly extensions?: ServerExtensions | undefined;
@@ -810,7 +845,7 @@ index 063320c..8f089b7 100644
    };
  });
 diff --git a/dist/ai/internal/mcpProtocol/v2026_07_28.js b/dist/ai/internal/mcpProtocol/v2026_07_28.js
-index 0161147..e83835d 100644
+index 0161147..7a8e952 100644
 --- a/dist/ai/internal/mcpProtocol/v2026_07_28.js
 +++ b/dist/ai/internal/mcpProtocol/v2026_07_28.js
 @@ -219,6 +219,14 @@ export const makeHandlers = (core, _lifecycle, context) => {
@@ -836,7 +871,18 @@ index 0161147..e83835d 100644
      return {
        supportedVersions: context.supportedVersions,
        capabilities,
-@@ -535,6 +544,40 @@ export const makeHandlers = (core, _lifecycle, context) => {
+@@ -366,7 +375,9 @@ export const makeHandlers = (core, _lifecycle, context) => {
+         ...privateStaleCache,
+         supportedVersions: Array.from(discovery.supportedVersions),
+         capabilities: discovery.capabilities,
+-        instructions: context.serverInfo.instructions
++        instructions: Effect.isEffect(context.serverInfo.instructions)
++          ? yield* context.serverInfo.instructions
++          : context.serverInfo.instructions
+       }, context.serverInfo);
+       return yield* decodeDiscoverResult(result);
+     }, Effect.mapError(projectError)),
+@@ -535,6 +546,40 @@ export const makeHandlers = (core, _lifecycle, context) => {
          _meta: toolResult._meta
        }), context.serverInfo);
      }, Effect.mapError(projectError)),
@@ -878,7 +924,7 @@ index 0161147..e83835d 100644
        return yield* Effect.void;
      })
 diff --git a/dist/ai/internal/mcpRuntime.js b/dist/ai/internal/mcpRuntime.js
-index 06370fd..c93d955 100644
+index 06370fd..c315a31 100644
 --- a/dist/ai/internal/mcpRuntime.js
 +++ b/dist/ai/internal/mcpRuntime.js
 @@ -6,7 +6,9 @@ import * as HttpServerRequest from "../../http/HttpServerRequest.js";
@@ -1076,7 +1122,16 @@ index 06370fd..c93d955 100644
        const contextMap = new Map();
        const installationContext = {
          subscribeServerNotifications: options.subscribeServerNotifications,
-@@ -408,9 +474,13 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -369,6 +435,8 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+         }));
+         const lifecycle = {
+           initialize: Effect.fnUntraced(function* (protocolVersion, profile, clientId) {
++            const instructions = options.serverInfo.instructions;
++            const resolvedInstructions = Effect.isEffect(instructions) ? yield* instructions : instructions;
+             const presence = yield* options.core.registrationPresence;
+             return yield* Effect.withFiber(fiber => {
+               const httpRequest = Context.getOrUndefined(fiber.context, HttpServerRequest.HttpServerRequest);
+@@ -408,9 +476,13 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
                  supportsResourceSubscriptions: httpRequest === undefined && capabilities.resources?.subscribe === true,
                  logLevel: options.defaultLogLevel
                };
@@ -1091,16 +1146,19 @@ index 06370fd..c93d955 100644
                  appendPreResponseHandlerUnsafe(httpRequest, (_request, response) => Effect.succeed(HttpServerResponse.setHeaders(response, {
                    [MCP_SESSION_ID_HEADER]: sessionId,
                    [MCP_PROTOCOL_VERSION_HEADER]: protocol.protocolVersion
-@@ -418,7 +488,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -418,9 +490,9 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
                } else {
                  stateful.registerConnection(clientId, registration);
                }
 -              return Effect.succeed({
 +              return Effect.as(saved, {
                  capabilities,
-                 instructions: options.serverInfo.instructions,
+-                instructions: options.serverInfo.instructions,
++                instructions: resolvedInstructions,
                  serverInfo: PublicMcpSchema.Implementation.make({
-@@ -431,7 +501,11 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+                   name: options.serverInfo.name,
+                   version: options.serverInfo.version,
+@@ -431,7 +503,11 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
                });
              });
            }),
@@ -1113,7 +1171,7 @@ index 06370fd..c93d955 100644
            subscribe: stateful.subscribe,
            unsubscribe: stateful.unsubscribe,
            clientNotification: Effect.fnUntraced(function* (notification, clientId) {
-@@ -449,5 +523,5 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
+@@ -449,5 +525,5 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (protocols) {
  /**
   * @internal
   */
@@ -1562,7 +1620,7 @@ index 02fa724..c316c3a 100644
 + */
 +export type UnsubscribeEventParams = typeof UnsubscribeEventParams.Type
 diff --git a/src/ai/McpServer.ts b/src/ai/McpServer.ts
-index 8c601ab..fd5df94 100644
+index 8c601ab..824ac4e 100644
 --- a/src/ai/McpServer.ts
 +++ b/src/ai/McpServer.ts
 @@ -50,6 +50,7 @@ import * as AiError from "./AiError.ts"
@@ -1612,6 +1670,33 @@ index 8c601ab..fd5df94 100644
  class McpClientKey extends Data.Class<{
    readonly clientId: number
    readonly profile: McpCore.NegotiatedProtocolProfile<string>
+@@ -679,7 +703,7 @@ class McpClientKey extends Data.Class<{
+ export const run: (options: {
+   readonly name: string
+   readonly version: string
+-  readonly instructions?: string | undefined
++  readonly instructions?: string | Effect.Effect<string> | undefined
+   readonly description?: string | undefined
+   readonly websiteUrl?: string | undefined
+   readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined
+@@ -692,7 +716,7 @@ export const run: (options: {
+ > = Effect.fnUntraced(function*(options: {
+   readonly name: string
+   readonly version: string
+-  readonly instructions?: string | undefined
++  readonly instructions?: string | Effect.Effect<string> | undefined
+   readonly description?: string | undefined
+   readonly websiteUrl?: string | undefined
+   readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined
+@@ -710,7 +734,7 @@ const runWithRuntime = Effect.fnUntraced(function*(
+   options: {
+     readonly name: string
+     readonly version: string
+-    readonly instructions?: string | undefined
++    readonly instructions?: string | Effect.Effect<string> | undefined
+     readonly description?: string | undefined
+     readonly websiteUrl?: string | undefined
+     readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined
 @@ -798,6 +822,8 @@ const runWithRuntime = Effect.fnUntraced(function*(
        if (!cancelRequest(clientId, requestId)) {
          return Effect.void
@@ -1653,6 +1738,33 @@ index 8c601ab..fd5df94 100644
                  activeRequests.set(clientId, requests)
                }
                const handled = f(clientId, routedRequest)
+@@ -1379,7 +1411,7 @@ const runWithRuntime = Effect.fnUntraced(function*(
+ export const layer = (options: {
+   readonly name: string
+   readonly version: string
+-  readonly instructions?: string | undefined
++  readonly instructions?: string | Effect.Effect<string> | undefined
+   readonly description?: string | undefined
+   readonly websiteUrl?: string | undefined
+   readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined
+@@ -1393,7 +1425,7 @@ export const layer = (options: {
+ const layerWithRuntime = (options: {
+   readonly name: string
+   readonly version: string
+-  readonly instructions?: string | undefined
++  readonly instructions?: string | Effect.Effect<string> | undefined
+   readonly description?: string | undefined
+   readonly websiteUrl?: string | undefined
+   readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined
+@@ -1437,7 +1469,7 @@ const layerWithRuntime = (options: {
+ export const layerStdio = (options: {
+   readonly name: string
+   readonly version: string
+-  readonly instructions?: string | undefined
++  readonly instructions?: string | Effect.Effect<string> | undefined
+   readonly description?: string | undefined
+   readonly websiteUrl?: string | undefined
+   readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined
 @@ -1516,6 +1548,35 @@ const mcpStdioSerialization = (
    })
  }
@@ -1689,6 +1801,15 @@ index 8c601ab..fd5df94 100644
  /**
   * Registers a Streamable HTTP MCP endpoint at `options.path`.
   *
+@@ -1550,7 +1611,7 @@ const mcpStdioSerialization = (
+ export const layerHttp = (options: {
+   readonly name: string
+   readonly version: string
+-  readonly instructions?: string | undefined
++  readonly instructions?: string | Effect.Effect<string> | undefined
+   readonly description?: string | undefined
+   readonly websiteUrl?: string | undefined
+   readonly icons?: ReadonlyArray<McpSchema.Icon> | undefined
 @@ -1558,8 +1619,13 @@ export const layerHttp = (options: {
    readonly protocols: Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter>
    readonly extensions?: ServerExtensions | undefined
@@ -2007,9 +2128,18 @@ index a7d200d..c6ef344 100644
 +  return { tools, resources, prompts, completions, events, registrationPresence }
  })
 diff --git a/src/ai/internal/mcpProtocol.ts b/src/ai/internal/mcpProtocol.ts
-index 1426562..a28f3f7 100644
+index 1426562..8628e77 100644
 --- a/src/ai/internal/mcpProtocol.ts
 +++ b/src/ai/internal/mcpProtocol.ts
+@@ -401,7 +401,7 @@ export interface HandlerInstallationContext {
+   readonly serverInfo: {
+     readonly name: string
+     readonly version: string
+-    readonly instructions?: string | undefined
++    readonly instructions?: string | Effect.Effect<string> | undefined
+     readonly description?: string | undefined
+     readonly websiteUrl?: string | undefined
+     readonly icons?: ReadonlyArray<PublicMcpSchema.Icon> | undefined
 @@ -411,6 +411,7 @@ export interface HandlerInstallationContext {
      readonly tools: boolean
      readonly resources: boolean
@@ -2019,7 +2149,7 @@ index 1426562..a28f3f7 100644
  }
  
 diff --git a/src/ai/internal/mcpProtocol/v2026_07_28.ts b/src/ai/internal/mcpProtocol/v2026_07_28.ts
-index c1cce20..37dfe24 100644
+index c1cce20..a47b1d9 100644
 --- a/src/ai/internal/mcpProtocol/v2026_07_28.ts
 +++ b/src/ai/internal/mcpProtocol/v2026_07_28.ts
 @@ -322,6 +322,20 @@ export const makeHandlers = (
@@ -2051,7 +2181,18 @@ index c1cce20..37dfe24 100644
      return { supportedVersions: context.supportedVersions, capabilities, serverInfo: context.serverInfo }
    })
    const getInvocation = PublicMcpSchema.McpRequestContext.useSync(
-@@ -665,6 +680,42 @@ export const makeHandlers = (
+@@ -483,7 +498,9 @@ export const makeHandlers = (
+         ...privateStaleCache,
+         supportedVersions: Array.from(discovery.supportedVersions),
+         capabilities: discovery.capabilities,
+-        instructions: context.serverInfo.instructions
++        instructions: Effect.isEffect(context.serverInfo.instructions)
++          ? yield* context.serverInfo.instructions
++          : context.serverInfo.instructions
+       }, context.serverInfo)
+       return yield* decodeDiscoverResult(result)
+     }, Effect.mapError(projectError)),
+@@ -665,6 +682,42 @@ export const makeHandlers = (
          context.serverInfo
        )
      }, Effect.mapError(projectError)),
@@ -2095,7 +2236,7 @@ index c1cce20..37dfe24 100644
        _request: typeof McpSchema.CancelledNotification.payloadSchema.Type
      ) {
 diff --git a/src/ai/internal/mcpRuntime.ts b/src/ai/internal/mcpRuntime.ts
-index b388d17..a1d2665 100644
+index b388d17..eb91506 100644
 --- a/src/ai/internal/mcpRuntime.ts
 +++ b/src/ai/internal/mcpRuntime.ts
 @@ -15,6 +15,8 @@ import * as Layer from "../../Layer.ts"
@@ -2121,6 +2262,15 @@ index b388d17..a1d2665 100644
    }
  
  /**
+@@ -132,7 +134,7 @@ export interface HandlerInstallationOptions {
+   readonly serverInfo: {
+     readonly name: string
+     readonly version: string
+-    readonly instructions?: string | undefined
++    readonly instructions?: string | Effect.Effect<string> | undefined
+     readonly description?: string | undefined
+     readonly websiteUrl?: string | undefined
+     readonly icons?: ReadonlyArray<PublicMcpSchema.Icon> | undefined
 @@ -168,6 +170,11 @@ export interface ServerRuntimeShape {
      request: RpcMessage.RequestEncoded
    ) => Effect.Effect<PreparedRequest, unknown>
@@ -2346,7 +2496,16 @@ index b388d17..a1d2665 100644
        const contextMap = new Map<string, unknown>()
        const installationContext: McpProtocol.HandlerInstallationContext = {
          subscribeServerNotifications: options.subscribeServerNotifications,
-@@ -521,9 +609,13 @@ export const make = Effect.fnUntraced(function*(
+@@ -494,6 +582,8 @@ export const make = Effect.fnUntraced(function*(
+         yield* handlerTarget.install(protocol, PingRpcs, PingRpcs.of({ ping: () => Effect.succeed({}) }))
+         const lifecycle: McpProtocol.LifecycleRuntime = {
+           initialize: Effect.fnUntraced(function*(protocolVersion, profile, clientId) {
++            const instructions = options.serverInfo.instructions
++            const resolvedInstructions = Effect.isEffect(instructions) ? yield* instructions : instructions
+             const presence = yield* options.core.registrationPresence
+             return yield* Effect.withFiber((fiber) => {
+               const httpRequest = Context.getOrUndefined(fiber.context, HttpServerRequest.HttpServerRequest)
+@@ -521,9 +611,13 @@ export const make = Effect.fnUntraced(function*(
                    capabilities.resources?.subscribe === true,
                  logLevel: options.defaultLogLevel
                }
@@ -2361,16 +2520,19 @@ index b388d17..a1d2665 100644
                  appendPreResponseHandlerUnsafe(
                    httpRequest,
                    (_request, response) =>
-@@ -535,7 +627,7 @@ export const make = Effect.fnUntraced(function*(
+@@ -535,9 +629,9 @@ export const make = Effect.fnUntraced(function*(
                } else {
                  stateful.registerConnection(clientId, registration)
                }
 -              return Effect.succeed({
 +              return Effect.as(saved, {
                  capabilities,
-                 instructions: options.serverInfo.instructions,
+-                instructions: options.serverInfo.instructions,
++                instructions: resolvedInstructions,
                  serverInfo: PublicMcpSchema.Implementation.make({
-@@ -548,7 +640,14 @@ export const make = Effect.fnUntraced(function*(
+                   name: options.serverInfo.name,
+                   version: options.serverInfo.version,
+@@ -548,7 +642,14 @@ export const make = Effect.fnUntraced(function*(
                })
              })
            }),
@@ -2386,7 +2548,7 @@ index b388d17..a1d2665 100644
            subscribe: stateful.subscribe,
            unsubscribe: stateful.unsubscribe,
            clientNotification: Effect.fnUntraced(function*(notification, clientId) {
-@@ -568,5 +667,6 @@ export const make = Effect.fnUntraced(function*(
+@@ -568,5 +669,6 @@ export const make = Effect.fnUntraced(function*(
   * @internal
   */
  export const layer = (
