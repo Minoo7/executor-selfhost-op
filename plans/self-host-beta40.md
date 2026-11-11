@@ -8,12 +8,12 @@ Do not run the historical beta39 controller. Its broad log gate caused an unnece
 ## Use this approval sequence
 
 One checkbox names one gate and the evidence that closes it. An unchecked gate blocks the next phase.
-The operator follows the tailored Frame, Design, Verify, and Audit workflow from the p3stack `figure-it-out` skill.
 This is one service upgrade, not a PR merge program. No automatic merge or hourly deployment program is proposed.
 
 1. Approve the feature scope and release-preparation work in this plan.
 2. Prepare and qualify the production artifact without production access. Resolve the private ARM rehearsal-host requirement.
-3. Obtain explicit authorization before production preflight and snapshot collection. That authorization does not permit activation.
+3. Obtain explicit authorization for production inspection, the authenticated provider calls, and snapshot A's writer stop/watchdog suspension.
+   Name the downtime budget and the encrypted off-host and private ARM destinations before transferring data plus keys. This does not permit activation.
 4. Rehearse the production snapshot privately. Fill the approval record with the immutable digest, results, and accepted risks.
 5. Obtain Vincent's **explicit deploy approval for that digest** and maintenance window.
 6. Execute the final identity gate, fresh backup, activation, and verification. Roll back only under the rules below.
@@ -66,6 +66,15 @@ depot build --project 5884x6f4tn --platform linux/amd64,linux/arm64 \
 - [ ] Run the five named Docker migration/disconnect cases and the exact-input checks against the production-tagged artifact.
       Record test titles, counts, image digests, logs, and build headers. Run only named scenarios.
       BuildKit `RUN` smoke tests and the verified gzip hashes alone do not establish ARM container acceptance.
+- [ ] Supply all three distinct ARM images required by the migration spec before those five cases run.
+      Build a **synthetic qualification baseline** from source `1677c7860872be67d214ad6b52d6d46b24d2fdec` using its complete Dockerfile and an honest qualification header.
+      Record its ARM manifest digest and source label. The existing `10023ab...` synthetic baseline is amd64-only and cannot fill this slot.
+      Select and record the official stock beta40 ARM manifest digest for the stock-control slot, and record its reported version/label without claiming unproven source correspondence.
+      Set `EXECUTOR_E2E_DOCKER_IMAGE`, `EXECUTOR_E2E_DOCKER_ORG_INSTRUCTIONS_BASELINE_IMAGE`, and `EXECUTOR_E2E_DOCKER_ORG_INSTRUCTIONS_STOCK_IMAGE` to those qualified ARM references.
+      The exact production `1f921aad...` image is a separate input obtained only with snapshot A, not a prerequisite requiring unapproved production access.
+- [ ] Derive the expected ARM workerd binary SHA256 by decompressing the verified `linux-arm64` archive pinned in `workerd.json`.
+      Its gzip SHA256 is `f22cf953782ba645e45dbab96d5a1f9cf429389c8e7da840793448068db26ce9`.
+      Record the derived raw hash, and match it against `/app/workerd` in the ARM candidate. Do not use the amd64 raw hash `129cc102...`.
 
 The Dockerfile has inherited floating system inputs, including apt repositories and a distroless tag.
 A new build is not byte-reproducible by assumption. Deploy the newly qualified immutable digest, never a later rebuild of its tag.
@@ -86,6 +95,8 @@ Any application or trust-policy fix changes the source SHA, build identity, and 
 - [ ] Include the loss of the file-upload button and ownership-conversion controls in the deploy approval.
 - [ ] Verify existing account ownership, encrypted credential hashes, generation, grants, and app links on the retained-data rehearsal.
       The sandbox's native multi-user account test passed, but it does not prove every production account journey.
+      Compare immutable credential/link state before authenticated verification. Record expected later session timestamps, job/run rows, last-use/health state, and any successful OAuth refresh separately.
+      A credential refresh may legitimately replace ciphertext or generation. Require a correlated refresh receipt before treating that change as expected; do not ignore unexplained changes.
 - [ ] Do not publish, reset, delete, or overwrite either app's unpublished work during this upgrade.
 
 ## Reconfirm the production identity after authorization
@@ -152,8 +163,10 @@ Use the actual authorized MCP resource URL and organization ID from the operator
 The existing amd64 synthetic rehearsal passed. No actual production-state beta40 rehearsal or ARM runtime acceptance has run yet.
 
 - [ ] Select an approved private ARM64 Docker runner with enough storage. Keep production snapshots off Git, CI artifacts, public Daytona, and Depot builds.
-- [ ] After snapshot authorization, obtain rehearsal snapshot A with the stopped-writer procedure below, then resume the original baseline.
-      Do not leave production stopped throughout off-host analysis. Restore the recorded Executor watchdog state.
+- [ ] After the explicit snapshot-A authorization, capture a uniquely named rehearsal archive and the **exact production image archive** while the baseline writer is stopped.
+      Reuse the archive/manifest format below, but use an A-only directory and `BACKUP_PHASE=A`.
+      Do not install `rollback.sh`, write an activation receipt, or update the `.current` pointer for snapshot A.
+      Resume the original baseline and its recorded watchdog state after local archive verification, before off-host transfer/analysis.
 - [ ] Restore snapshot A to a separate directory/volume on the private runner.
       Deny external egress, production routes, host services, Docker sockets, and Tailscale access before booting either copied image.
       Prove that control requests work but outbound requests cannot leave the rehearsal network.
@@ -162,7 +175,9 @@ The existing amd64 synthetic rehearsal passed. No actual production-state beta40
       Never write the rehearsal data back to production.
 - [ ] Inspect supported offline exports through the real PGlite adapter while each copy is stopped.
       Never modify raw `executor_pg_files` pages or open two engines on the same directory.
-- [ ] Boot the baseline, the qualified ARM candidate, repeat the candidate, and restore a full snapshot to the baseline.
+- [ ] Load snapshot A's saved image archive and require image ID `sha256:1f921aadddfee82de5fc796430bb1a83db963d4a95a048bcb1ac058eb051d6bb`.
+      This private retained-data journey uses that exact production image, not the newly source-built synthetic qualification baseline.
+      Boot it on a copy, then the qualified ARM candidate, repeat the candidate, and restore a full snapshot to the exact old image.
       Verify saved guidance/revision, all journal identities, retained deployed bundles, credentials/grants/links, working files, and schedule definitions.
       Distinguish expected copied run-history/auth-origin changes from schema or user-state loss.
 - [ ] Capture schema before/after and the actual Better Auth DDL or schema diff on the copy.
@@ -178,31 +193,46 @@ The existing amd64 synthetic rehearsal passed. No actual production-state beta40
 
 Before activation approval, provide Vincent all of these values. Missing values block deployment.
 
-| Field                                          | Required value or current state                                                                                                       |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Application source                             | Frozen `d22ca5ba0026abdb28fca0449f60472a383b1646`, or a separately reviewed replacement SHA                                           |
-| Production build header                        | Proposed `2.0.0-beta.40-org-instructions-skill-delete-runtime-d22ca5ba0`                                                              |
-| Production index and ARM manifest digests      | **Not built or assigned by this planning task**                                                                                       |
-| Private ARM runner and receipts                | **Not selected or run**                                                                                                               |
-| Fresh identity and required baseline workflows | **Not inspected in this planning task**                                                                                               |
-| Snapshot A and private rehearsal               | **Not taken or run**                                                                                                                  |
-| Risks accepted or fixed                        | Each item in the risk table below                                                                                                     |
-| Maintenance budget                             | Proposed 30-minute window, not a measured downtime estimate. Include off-host transfer and a 10-minute acceptance window.             |
-| Exact scripts/controller                       | Stage new beta40 scripts, syntax-check and exercise them on the private rehearsal before approval. No old beta39 log-grep controller. |
+| Field                                          | Required value or current state                                                                                                                                                                                                               |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application source                             | Frozen `d22ca5ba0026abdb28fca0449f60472a383b1646`, or a separately reviewed replacement SHA                                                                                                                                                   |
+| Production build header                        | Proposed `2.0.0-beta.40-org-instructions-skill-delete-runtime-d22ca5ba0`                                                                                                                                                                      |
+| Production index and ARM manifest digests      | **Not built or assigned by this planning task**                                                                                                                                                                                               |
+| Synthetic ARM baseline and stock ARM controls  | **Not built/selected**. Record both immutable manifest digests and labels before synthetic qualification.                                                                                                                                     |
+| Exact production baseline archive              | **Not collected**. Snapshot A must supply the verified `1f921aad...` image archive for retained-data rehearsal.                                                                                                                               |
+| ARM workerd binary hash                        | **Not derived**. Record gzip verification and the raw hash derived from the ARM archive, plus the candidate-container match.                                                                                                                  |
+| Private ARM runner and receipts                | **Not selected or run**                                                                                                                                                                                                                       |
+| Fresh identity and required baseline workflows | **Not inspected in this planning task**                                                                                                                                                                                                       |
+| Snapshot A and private rehearsal               | **Not taken or run**                                                                                                                                                                                                                          |
+| Better Auth DDL and locking review             | **Not run**. Supply before/after schema, DDL diff, lock/write-blocking review, timing and repeat/full-restore receipts.                                                                                                                       |
+| Durable image repository and retention         | **Not selected/confirmed**. Record the exact repository/index/ARM manifests used for qualification and deployment.                                                                                                                            |
+| Snapshot destinations and space                | **Not approved**. Name encrypted off-host storage, runner identity, access controls, and the space receipts below before snapshot A.                                                                                                          |
+| Verifier authentication                        | Record authorized actor/resource/scopes and validity through the window plus 30 minutes for recovery. If TTL is opaque, require a successful validity probe and an operator available to renew it. Do not send email codes or broaden grants. |
+| Dependency controls and fixture                | Approve the per-workflow controls below and the private fixture source, ownership, visibility and removal policy. Unavailable controls force HOLD for ambiguous network failures.                                                             |
+| Risks accepted or fixed                        | Each item in the risk table below                                                                                                                                                                                                             |
+| Maintenance budget                             | Proposed 30-minute window, not a measured downtime estimate. Include off-host transfer and a 10-minute acceptance window.                                                                                                                     |
+| Exact scripts/controller                       | Stage new beta40 scripts, syntax-check and exercise them on the private rehearsal before approval. No old beta39 log-grep controller.                                                                                                         |
 
 Do not use the amd64 review digest as a fallback when the production digest is missing.
 
 ## Take fresh stopped-writer backup B after deploy approval
 
-Every shell block below is a future operator recipe. Run it in a separate root-owned Bash script, not an interactive `set -e` shell.
-Persist the actual run paths and recovery variables before stopping the writer.
+These are body sections for the newly reviewed beta40 scripts, not a standalone controller.
+Stage and exercise their failure handling privately before approval. Never paste `set -e` into an interactive root shell.
+Only backup B can authorize an activation or rollback. Snapshot A never updates the `.current` pointer.
+
+Initialize B from the approved repository, digest, and window. Do not substitute the review registry if the artifact was copied elsewhere.
 
 ```bash
 set -euo pipefail
 umask 077
-: "${PROD_INDEX_DIGEST:?Set the approved qualified production index digest}"
+: "${PROD_IMAGE_REPOSITORY:?Set the repository from the approval record}"
+: "${PROD_INDEX_DIGEST:?Set the qualified index digest from the approval record}"
+: "${APPROVED_WINDOW_END_EPOCH:?Set the approved UTC window end}"
 [[ "$PROD_INDEX_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+[[ "$APPROVED_WINDOW_END_EPOCH" =~ ^[0-9]+$ ]]
 test "$PROD_INDEX_DIGEST" != sha256:ecd521e4cb96b6dfe639b67ae6f9bf7da48527be619f90880df9b50be2327ddf
+BACKUP_PHASE=B
 RUN_ID="beta40-d22ca5ba0-$(date -u +%Y%m%dT%H%M%SZ)"
 STAGE_DIR="/opt/executor/upgrades/$RUN_ID"
 BACKUP_DIR="/opt/executor/backups/$RUN_ID"
@@ -211,64 +241,109 @@ COMPOSE_FILE="$PROJECT_DIR/docker-compose.after.yml"
 COMPOSE_PROJECT=executor
 SERVICE=executor
 DATA_VOLUME=executor_executor-v2-data
-IMAGE="registry.depot.dev/5884x6f4tn@$PROD_INDEX_DIGEST"
+IMAGE="$PROD_IMAGE_REPOSITORY@$PROD_INDEX_DIGEST"
 BUILD=2.0.0-beta.40-org-instructions-skill-delete-runtime-d22ca5ba0
 ROLLBACK_IMAGE="executor-rollback:$RUN_ID-1677c7860"
+REVIEWED_COMPOSE_SHA=b590fc08bb714b46e10424a01fb38731aca756fcca91817cf715a0e5209405e9
 ```
 
 - [ ] Re-run the identity and required-baseline gates immediately before the stop.
       If material state differs from rehearsal A, resume preparation rather than improvising during activation.
 - [ ] Pull/inspect the approved digest before downtime using a disposable Docker credential directory.
       Verify ARM labels/header/checksum. Remove the pull credential directory.
-- [ ] Create unused 0700 stage/backup directories. Save the original image reference, exact image ID, Compose bytes/checksum, resolved config, private environment, key fingerprints, volume path/owner/mode, watchdog states, and acceptance expectations.
-      Save `recovery.env` mode 0600 in the stage and backup directories. It must survive a new SSH session.
-      Point `/opt/executor/upgrades/beta40-d22ca5ba0.current` at this exact stage and report that path before stopping.
-- [ ] Tag and archive the old image while it is still online. Save the dedicated rollback tag, not only an untagged image ID.
+- [ ] Check disk space after images are present. Let `V` be the full uncompressed volume size, `I` the saved baseline image size, and `C` the largest loaded qualification image.
+      Reserve at least `V + I + 1 GiB` on the backup filesystem and `V + 1 GiB` on the data filesystem.
+      If they share a filesystem, require at least `2V + I + 1 GiB` free instead.
+      Require `V + I + 1 GiB` off-host for the archive copy. On the private rehearsal runner, after loading images, reserve `5V + I + 2C + 1 GiB` for copies, exports, and temporary container roots.
+      Record `du`, `df`, image-size and storage-driver receipts. Recheck before the stop. These are conservative operational reserves, not measured compression promises.
+- [ ] Capture the files below while the baseline is online. The baseline expectation receipt comes from the authorized functional gates, not an empty generated object.
+      Archive every referenced external config/key file in a reviewed private config archive; use a valid empty archive only when the reviewed reference list is empty.
 
 ```bash
 set -euo pipefail
-source /opt/executor/upgrades/beta40-d22ca5ba0.current/recovery.env
+umask 077
+: "${BASELINE_EXPECTATIONS_FILE:?Supply the reviewed private baseline receipt}"
+: "${OPERATOR_CONFIG_ARCHIVE:?Supply the reviewed private config archive}"
+mkdir -m 700 "$STAGE_DIR" "$BACKUP_DIR"
+printf '%s  %s\n' "$REVIEWED_COMPOSE_SHA" "$COMPOSE_FILE" | sha256sum --check -
+CONTAINER=$(docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
+  -f "$COMPOSE_FILE" ps -q "$SERVICE")
+test -n "$CONTAINER"
+OLD_IMAGE_ID=$(docker inspect "$CONTAINER" --format '{{.Image}}')
+OLD_IMAGE_REF=$(docker inspect "$CONTAINER" --format '{{.Config.Image}}')
+test "$OLD_IMAGE_ID" = sha256:1f921aadddfee82de5fc796430bb1a83db963d4a95a048bcb1ac058eb051d6bb
+test "$OLD_IMAGE_REF" = executor-org-instructions:skill-delete-1677c7860-arm64
+DATA_DIR=$(docker volume inspect "$DATA_VOLUME" --format '{{.Mountpoint}}')
+test -d "$DATA_DIR" && test ! -L "$DATA_DIR"
+cp --preserve=all "$COMPOSE_FILE" "$BACKUP_DIR/docker-compose.before.private.yml"
+stat -c '%u %g %a' "$DATA_DIR" > "$BACKUP_DIR/data-before.mode"
+printf '%s\n' "$OLD_IMAGE_ID" > "$BACKUP_DIR/image-before.id"
+printf '%s\n' "$OLD_IMAGE_REF" > "$BACKUP_DIR/image-before.ref"
+docker inspect "$CONTAINER" > "$BACKUP_DIR/container-before.private.json"
+docker image inspect "$OLD_IMAGE_ID" > "$BACKUP_DIR/image-before.private.json"
+docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
+  -f "$COMPOSE_FILE" config --format json > "$BACKUP_DIR/compose-resolved.before.private.json"
+systemctl show executor-health.timer executor-health.service executor-update.timer \
+  > "$BACKUP_DIR/watchdog-before.private.txt"
+cp "$BASELINE_EXPECTATIONS_FILE" "$BACKUP_DIR/baseline-expectations.private.json"
+cp "$OPERATOR_CONFIG_ARCHIVE" "$BACKUP_DIR/operator-config.private.tar.gz"
+gzip -t "$BACKUP_DIR/operator-config.private.tar.gz"
+declare -p BACKUP_PHASE RUN_ID STAGE_DIR BACKUP_DIR PROJECT_DIR COMPOSE_FILE \
+  COMPOSE_PROJECT SERVICE DATA_VOLUME IMAGE BUILD ROLLBACK_IMAGE REVIEWED_COMPOSE_SHA \
+  CONTAINER OLD_IMAGE_ID OLD_IMAGE_REF DATA_DIR PROD_IMAGE_REPOSITORY PROD_INDEX_DIGEST \
+  APPROVED_WINDOW_END_EPOCH > "$STAGE_DIR/recovery.env"
+chmod 600 "$STAGE_DIR/recovery.env"
+cp "$STAGE_DIR/recovery.env" "$BACKUP_DIR/recovery.env"
 docker tag "$OLD_IMAGE_ID" "$ROLLBACK_IMAGE"
 docker save "$ROLLBACK_IMAGE" | gzip -1 > "$BACKUP_DIR/image-before.tar.gz"
 gzip -t "$BACKUP_DIR/image-before.tar.gz"
 ```
 
-- [ ] Suspend only the confirmed Executor watchdog. Do not alter the update timer if it is already disabled.
-- [ ] Stop only Executor and prove no Docker or host process can write the volume.
-      Reuse the reviewed no-writer inspection and verify writable handles/mappings, not just container count. Missing inspection is a stop, not a pass.
+- [ ] Install the reviewed scripts and their recorded hashes in this root-owned stage.
+      Require the no-writer verifier to accept `DATA_DIR` and inspect writable handles/mappings.
+      Only then atomically point `/opt/executor/upgrades/beta40-d22ca5ba0.current` at this B stage.
+      Record its physical path and run ID in the operator receipt. A must never create that pointer or contain `rollback.sh`.
+- [ ] Suspend only the confirmed Executor watchdog. Leave an already disabled update timer unchanged.
+- [ ] Stop only Executor, then archive. A failed `docker ps` must fail the assignment, not masquerade as an empty writer list.
 
 ```bash
 set -euo pipefail
 source /opt/executor/upgrades/beta40-d22ca5ba0.current/recovery.env
+test "$BACKUP_PHASE" = B
 docker stop --time 30 "$CONTAINER"
-test -z "$(docker ps -q --filter "volume=$DATA_VOLUME")"
-# Run the staged no-writer verifier before archiving.
+writers=$(docker ps -q --filter "volume=$DATA_VOLUME")
+test -z "$writers"
 python3 "$STAGE_DIR/verify-no-writers.py" "$DATA_DIR"
 tar --numeric-owner --xattrs --acls -C "$DATA_DIR" -cpf - . |
   gzip -1 > "$BACKUP_DIR/data-before.tar.gz"
 gzip -t "$BACKUP_DIR/data-before.tar.gz"
 tar -tzf "$BACKUP_DIR/data-before.tar.gz" >/dev/null
 stat -c '%s' "$BACKUP_DIR/data-before.tar.gz"
+(cd "$BACKUP_DIR" && sha256sum \
+  data-before.tar.gz image-before.tar.gz docker-compose.before.private.yml \
+  data-before.mode recovery.env image-before.id image-before.ref \
+  container-before.private.json image-before.private.json \
+  compose-resolved.before.private.json watchdog-before.private.txt \
+  baseline-expectations.private.json operator-config.private.tar.gz > SHA256SUMS)
 (cd "$BACKUP_DIR" && sha256sum --check SHA256SUMS)
 ```
 
-The staged backup script must create `SHA256SUMS` after all fixed backup inputs exist, before the check above.
-Cover the data archive, image archive, original Compose/config, recovery file, and identity receipts. Store later logs separately.
-No production backup was created now. The paths above expand to **fresh** backup B during execution; old beta39 archives are not substitutes.
+Keep later logs and activation receipts in the stage, outside this fixed checksum manifest.
+If backup B fails before any activation receipt exists, the staged error handler must verify the original image/mounts, restart that original container, and restore its watchdog state.
+If that safety check fails, stop and report the incident instead of starting an uncertain writer.
+No production backup was created now. Old beta39 archives are not substitutes for B.
 
 - [ ] Copy the complete backup to an approved encrypted off-host filesystem, proposed `/Users/minoo/.executor-upgrade-backups/$RUN_ID/`, mode 0700.
-      The archive contains decryption keys as well as encrypted credentials. Treat the whole archive as secret.
-      Use SSH transport, never a public artifact store.
-- [ ] Verify all checksums, gzip integrity, archive listing, and size independently off-host.
-      Record the actual local/remote paths, sizes, and SHA256 values in the execution receipt before activation.
-      Require usable off-host recovery data and the saved old image.
+      The archive contains decryption keys as well as encrypted credentials. Treat it as secret and use SSH, never a public artifact store.
+- [ ] Independently verify all checksums, gzip integrity, archive listing, and size off-host.
+      Record actual paths, size and SHA256 before activation. Stop if available space or recovery data is insufficient.
 
-On the authorized operator workstation, use the exact recorded run ID. This command copies only the new backup directory.
+On the authorized operator workstation, use the exact B run ID from the host receipt.
 
 ```bash
 set -euo pipefail
 umask 077
-: "${RUN_ID:?Use the exact run ID from the host preparation receipt}"
+: "${RUN_ID:?Use the exact B run ID from the host receipt}"
 [[ "$RUN_ID" =~ ^beta40-d22ca5ba0-[0-9]{8}T[0-9]{6}Z$ ]]
 OFFHOST_DIR="/Users/minoo/.executor-upgrade-backups/$RUN_ID"
 mkdir -m 700 -p "$OFFHOST_DIR"
@@ -279,8 +354,8 @@ gzip -t "$OFFHOST_DIR/data-before.tar.gz"
 tar -tzf "$OFFHOST_DIR/data-before.tar.gz" >/dev/null
 ```
 
-- [ ] Keep the writer stopped between backup B and activation. If backup/transfer fails before the candidate opens data, restart only the original container and restore its watchdog state. No data restore is needed then.
-      If pre-activation work exhausts the maintenance budget, resume the baseline and reschedule.
+- [ ] Keep the writer stopped between backup B and activation. If transfer fails or the pre-activation budget expires, verify/resume the original baseline and reschedule.
+      No data restore is needed before the candidate opens data. Never advance the controller merely because a snapshot file exists.
 
 ## Activate only Executor
 
@@ -292,12 +367,19 @@ tar -tzf "$OFFHOST_DIR/data-before.tar.gz" >/dev/null
       Require exactly the reviewed image delta. Do not reserialize or reformat other service definitions.
 - [ ] Check the live Compose checksum again against the captured/reviewed bytes immediately before installing the candidate atomically.
       No concurrent stack edits are allowed. Keep the original file in backup B.
-- [ ] Run only the following service recreation. Resolve the new container ID immediately afterward.
+- [ ] The qualified activation script must prepare candidate bytes from the saved original, replacing exactly one plain image scalar matching `OLD_IMAGE_REF` with `IMAGE`.
+      Refuse ambiguous YAML or multiple matches. Compare resolved JSON and require only `services.executor.image` to differ.
+      Keep every other byte unchanged, including other services. Preserve file ownership/mode on a same-directory temporary file, recheck the live checksum, then atomically rename it over the Compose file.
+      This recipe is a specification for that script, not an implemented installer.
+- [ ] Before changing Compose or starting the candidate, require backup phase B and a matching approved run ID, verified local/off-host manifests, and the approved digest.
+      Write an activation receipt containing that run ID, backup-manifest hash, candidate digest and activation time.
+      Persist controller state `ARMED` with a deadline no later than the approved window end or 15 minutes after activation, whichever comes first.
+      A command failure after this receipt must enter the classifier, never blindly resume the old engine against candidate-written data.
+- [ ] Run only the following service recreation after the guarded installer succeeds. This block is an excerpt, not the complete activation script. Resolve the new container ID immediately afterward.
 
 ```bash
 set -euo pipefail
 source /opt/executor/upgrades/beta40-d22ca5ba0.current/recovery.env
-# The staged activation script checks and installs the reviewed Compose first.
 docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
   -f "$COMPOSE_FILE" up -d --no-deps --pull never --force-recreate "$SERVICE"
 CONTAINER=$(docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
@@ -312,14 +394,17 @@ test -n "$CONTAINER"
 - [ ] Verify an authorized operator session without sending email. Compare preserved key fingerprints and explicit config.
 - [ ] Read organization instructions and compare additions/revision with backup B. On a new authorized MCP connection, require initialize and stateless discovery to match the candidate's combined instructions.
 - [ ] Complete authenticated Geotorget whoami through Executor using the existing saved account. Require the expected customer and terminal successful job, not only MCP initialization or an input-required response.
-- [ ] Observe at least two fresh successful Rakazo `computers` schedule occurrences after candidate startup, within the 10-minute acceptance window.
+- [ ] Observe at least two fresh successful Rakazo `computers` schedule occurrences after candidate startup, within the 10-minute healthy observation period.
       Require the same enabled interval, registry URL, source versions, working files, and stopped computer states. Do not trigger the mutation manually.
-- [ ] Run a 35,200,010-byte exact digest query on an explicitly approved disposable app fixture, plus a small control.
-      Prefer a fixture qualified before maintenance. Never modify a real app or publish a working tree for this check.
-      Require exact input length, UTF-8 byte count, and SHA256. Retain the ARM stateless/facet acceptance receipts too.
-      Creating this fixture is a production write covered by deploy approval, not read-only preflight. Its app has no real credentials or schedules.
+- [ ] After backup B, create the approved disposable fixture named `upgrade-probe-$RUN_ID` on the candidate, with no accounts, schedules, outbound requests or real data.
+      Its qualified source exposes only exact digest tools for stateless and SQL-facet invocation. Record its app ID, owner, source hash and active revision immediately.
+      Approve its member visibility explicitly if the native model cannot make it private. Never modify a real app or publish its working tree.
+      Run the small control and 35,200,010-byte input, requiring exact length, UTF-8 bytes and SHA256 on both paths.
+      On retry use the recorded app ID. After a lost creation response, recover it by exact name, owner and source inspection; never blindly redeploy by name or overwrite an existing app.
+      After acceptance, remove only this fixture through the supported API if its source/active revision is unchanged and it has no user edits. Otherwise retain it and report why.
+      Fixture creation and conditional removal are production writes covered by deploy approval. Full snapshot rollback removes it automatically.
 - [ ] Compare both app deployment IDs and unpublished working refs/content with backup B. Confirm account links/grants and sidecar IDs/start times remain intact.
-- [ ] Observe health, crashes/restarts, required workflow receipts, and logs for 10 minutes. Restore the original safe Executor watchdog state after acceptance, then check health again.
+- [ ] Observe health, crashes/restarts, required workflow receipts, and logs for 10 minutes after readiness, completing within the 15-minute activation budget. Restore the original safe Executor watchdog state after acceptance, then check health again.
 
 The new controller must use explicit verifier outcomes, not `grep ERROR` and not a blanket `trap ERR` that restores data for every command failure.
 
@@ -329,24 +414,40 @@ The new controller must use explicit verifier outcomes, not `grep ERROR` and not
 | `20 ROLLBACK_REQUIRED` | Invoke rollback once. Examples are broken candidate startup, migration/storage failure, crash/OOM/restart loop, data/identity loss, or a required workflow regression attributable to Executor.                                                           |
 | `30 HOLD_OPERATOR`     | Stop further rollout actions and report the evidence. Examples are an expired verifier credential, an unhealthy external provider/control, unavailable evidence, or an unclassified failure. Do not silently accept or restore data based on uncertainty. |
 
-A workflow failure is attributable when its baseline passed in this run with the same scope/state, the external dependency control still works from the relevant Executor network, and the candidate returns a failing or wrong result.
-Explicit Executor errors such as credential decryption, migration failure, or changed app/account identity qualify directly.
-If the dependency/control also fails, hold for the operator instead of blaming the upgrade.
+Use these controls and classifications. No helper container, sidecar command, network-policy change or new grant is authorized merely to obtain a control.
+
+| Check                     | Attributable failure requesting outcome 20                                                                                         | Ambiguous outcome requiring 30                                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Startup/storage/identity  | Failed migration, failed health within the qualified startup deadline, crash/OOM loop, missing preserved data or wrong image/mount | Missing evidence or unavailable verifier                                                                        |
+| Geotorget                 | Explicit Executor credential/decryption/runtime failure or a completed authenticated result for the wrong customer                 | Provider/login/network failure without an independently approved passing control                                |
+| Rakazo                    | Fresh `status` proves a successful current registry fetch but the preserved enabled schedule fails inside Executor                 | `status` cannot prove a fresh fetch, or registry/network control also fails                                     |
+| Organization instructions | Preserved additions/revision differ, wrong combined text, or an explicit MCP initialization error with valid auth                  | Expired auth, ingress failure, or unavailable evidence                                                          |
+| Large input               | Wrong exact digest or an explicit Executor transport/runtime error on a qualified fixture                                          | Public ingress 413/502 or timeout without a separately approved normal-auth loopback control isolating Executor |
+| Skill deletion            | Qualified fixture deletion changes neighbours, active version, or unrelated files                                                  | Unavailable browser/auth evidence                                                                               |
+
+A passing baseline with the same scope supports attribution for existing workflows. New feature correctness does not require beta32 to pass a 35 MB call.
+The private rehearsal does not qualify 35 MB through production tsdproxy. An ingress-only failure therefore holds unless a separately approved control isolates the candidate.
+For Rakazo, verify that `status` actually performs a fresh registry fetch before using it as that control; a cached status is insufficient.
+Explicit Executor errors still require request/job correlation, rather than a matching generic log string.
 
 The known `script terminated for unknown reasons`, `connect(): Connection timed out`, and `onBroken()` signatures **alone never request rollback**.
 Capture timestamp/request/job correlation and baseline comparison. If the same signature accompanies an attributable required-workflow failure, that failure still requests rollback.
 Do not label the messages harmless or suppress their collection. The same classification applies during rollback verification, so a familiar standalone log line cannot falsely turn functional recovery into `ROLLBACK_FAILED`.
 
-On `HOLD_OPERATOR`, keep the current healthy service running and restore its previously active, audited health-only watchdog.
-Do not declare acceptance. If health instead meets a hard failure predicate, request rollback automatically.
+Automatic rollback is allowed only while this run is `ARMED` and before its persisted deadline.
+On `HOLD_OPERATOR`, acceptance, or deadline expiry, persist `DISARMED` before exiting the controller. A hold leaves the current service unaccepted, reports its actual health, and restores only a previously active, audited health-only watchdog.
+A hard failure observed within the armed window requests rollback immediately. Once disarmed, any later snapshot restore needs a new operator decision because intervening writes may be lost.
 A failed rollback stops automation and leaves the incident with the operator. Never restore repeatedly or start the old engine on partially restored data.
-After acceptance, disarm this automatic snapshot-restore controller. A later incident needs a new decision about intervening writes.
+Controller terminal outcomes are `40 ROLLED_BACK_VERIFIED` and `50 ROLLBACK_FAILED`; verifier outcomes remain 0, 20 and 30. The historical beta39 controller used different meanings and must not be reused.
 
 ## Restore the exact old image and fresh backup B
 
-The staged command is `sudo bash /opt/executor/upgrades/beta40-d22ca5ba0.current/rollback.sh`.
-It must resolve its physical stage directory and source that run's saved `recovery.env`.
-Do not reuse any beta39 rollback path or pre-Geotorget snapshot.
+The future staged command is `sudo bash /opt/executor/upgrades/<B-RUN-ID>/rollback.sh --run-id <B-RUN-ID>`.
+Use the physical stage path recorded in the activation receipt, never infer it from a stale `.current` pointer.
+The script must compare its independently supplied run ID with `recovery.env` and the activation receipt, require `BACKUP_PHASE=B`, and verify the manifest hash and candidate digest.
+Automatic invocation also requires `ARMED` state and an unexpired deadline. Manual invocation after disarm requires a new explicit operator decision.
+Snapshot A has no rollback script. Do not reuse any beta39 rollback path or pre-Geotorget snapshot.
+The following body is an excerpt after those guards; it is not a ready-to-run recovery controller.
 
 - [ ] Save candidate logs and failure receipts. Suspend only the audited Executor watchdog.
 - [ ] Resolve the current Executor container by Compose labels, not the pre-deploy ID. Stop and remove only that container.
@@ -357,11 +458,20 @@ Do not reuse any beta39 rollback path or pre-Geotorget snapshot.
 
 ```bash
 set -euo pipefail
-source /opt/executor/upgrades/beta40-d22ca5ba0.current/recovery.env
+source "$STAGE_DIR/recovery.env"
 (cd "$BACKUP_DIR" && sha256sum --check SHA256SUMS)
-# The rollback script has stopped/removed only Executor and verified no writers.
+CURRENT_CONTAINER=$(docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
+  -f "$COMPOSE_FILE" ps -aq "$SERVICE")
+test -n "$CURRENT_CONTAINER"
+docker stop --time 30 "$CURRENT_CONTAINER"
+docker rm "$CURRENT_CONTAINER"
+writers=$(docker ps -q --filter "volume=$DATA_VOLUME")
+test -z "$writers"
+test "$(docker volume inspect "$DATA_VOLUME" --format '{{.Mountpoint}}')" = "$DATA_DIR"
+test "$DATA_DIR" = /var/lib/docker/volumes/executor_executor-v2-data/_data
+test -d "$DATA_DIR" && test ! -L "$DATA_DIR"
 python3 "$STAGE_DIR/verify-no-writers.py" "$DATA_DIR"
-! mountpoint -q "$DATA_DIR"
+if mountpoint -q "$DATA_DIR"; then exit 1; fi
 docker load -i "$BACKUP_DIR/image-before.tar.gz"
 test "$(docker image inspect "$ROLLBACK_IMAGE" --format '{{.Id}}')" = "$OLD_IMAGE_ID"
 docker tag "$ROLLBACK_IMAGE" "$OLD_IMAGE_REF"
@@ -374,6 +484,7 @@ chown "$DATA_UID:$DATA_GID" "$DATA_DIR"
 chmod "$DATA_MODE" "$DATA_DIR"
 tar --numeric-owner --xattrs --acls -xzpf "$BACKUP_DIR/data-before.tar.gz" -C "$DATA_DIR"
 cp -p "$BACKUP_DIR/docker-compose.before.private.yml" "$COMPOSE_FILE"
+printf '%s  %s\n' "$REVIEWED_COMPOSE_SHA" "$COMPOSE_FILE" | sha256sum --check -
 docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
   -f "$COMPOSE_FILE" up -d --no-deps --pull never --force-recreate "$SERVICE"
 ```

@@ -11,7 +11,12 @@ Transport and cancellation	SHIP_WITH_LIMIT	Bounded outer input and streamed inne
 Baseline	HISTORICAL_NOT_CURRENTLY_PROBED	1677c7860 image1f921aad and repaired Compose checksum b590fc08; do not use older b409 checksum.	Reconfirm after production-inspection authorization
 Geotorget and registry	PRESERVE_REPAIRS	Later report records both repairs and successful calls; beta39 rollback retained them.	Fresh baseline whoami and two natural schedule successes
 Backup	BLOCKED_UNTIL_AUTHORIZED	Snapshot A for rehearsal, then fresh stopped-writer B immediately before activation, with independent off-host checksums.	No fresh production backup exists from planning
-Rollback classifier	EXPLICIT_OUTCOMES	Hard attributable Executor failures request one full-image/full-data rollback; familiar logs alone do not.	0 ACCEPTED;20 ROLLBACK_REQUIRED;30 HOLD_OPERATOR
+Rollback classifier	EXPLICIT_OUTCOMES	Hard attributable Executor failures request one full-image/full-data rollback; familiar logs alone do not.	Verifier 0 ACCEPTED;20 ROLLBACK_REQUIRED;30 HOLD_OPERATOR; controller 40 ROLLED_BACK_VERIFIED;50 ROLLBACK_FAILED
 Client IP and generic logs	RISK_ACCEPTANCE_REQUIRED	Diagnose or explicitly accept without disabling auth protection or hiding errors.	Baseline/candidate functional correlation; no blanket error grep
 Production data rehearsal	PRIVATE_ARM_ONLY	Deny egress and production routes before copied schedulers start; never copy rehearsal data back.	Private runner and isolation proof not selected
 Production approval	WAITING	Present qualified digests, rehearsal receipts, risks and maintenance window before explicit activation approval.	plans/self-host-beta40.md
+Backup binding	REQUIRED	Snapshot A never stages rollback; B recovery requires phase, independent run ID, activation receipt and manifest binding.	Physical B stage path required
+Automatic restore window	BOUNDED	Only ARMED before the persisted deadline; hold, acceptance and expiry disarm. Later restore needs a new decision.	Approved window or activation plus 15 minutes, whichever ends first
+ARM qualification inputs	MISSING	Build ARM synthetic1677 baseline and select stock beta40 ARM; actual production image comes separately from snapshot A.	Record all immutable digests and ARM raw workerd hash
+Probe fixture	APPROVAL_REQUIRED	Create after B with unique run name; reuse ID, preserve edits, conditionally remove after acceptance.	No credentials, schedules or external calls; approve visibility
+Dependency attribution	EXPLICIT_CONTROLS	Unknown network/provider failures hold; wrong digests and explicit correlated Executor failures request rollback.	No unapproved sidecar or network changes
