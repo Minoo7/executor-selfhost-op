@@ -288,7 +288,7 @@ export function SkillWorkspace<E>({
               <>
                 {header()}
                 <p className="mb-4 text-xs text-muted-foreground">
-                  This deployed skill is read-only and remains live until the next deployment.
+                  This deployed skill is read-only here.
                 </p>
                 <SkillContent
                   document={{
@@ -575,7 +575,10 @@ function RemoveSkillFiles<E>({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !pending) onClose();
+        if (!open && !pending) {
+          if (changed || error) refresh();
+          onClose();
+        }
       }}
     >
       <DialogContent
