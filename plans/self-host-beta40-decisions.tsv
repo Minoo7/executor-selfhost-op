@@ -21,3 +21,8 @@ ARM qualification inputs	MISSING	Build ARM synthetic1677 baseline and select sto
 Probe fixture	APPROVAL_REQUIRED	Create after B with unique run name; reuse ID, preserve edits, conditionally remove after acceptance.	No credentials, schedules or external calls; approve visibility
 Dependency attribution	EXPLICIT_CONTROLS	Unknown network/provider failures hold; wrong digests and explicit correlated Executor failures request rollback.	No unapproved sidecar or network changes
 Release preparation 21:15	AUTHORIZED	ARM-only frozen-source build and private rehearsal authorized; no live stop/restart, backup B or activation.	Use existing verified snapshot only; never hot-copy DB
+ARM build result	BUILT_STATIC_VERIFIED	Native ARM source build sjpj5zg7vl; labels, architecture, baked version and pinned binary verified; no runtime acceptance.	.local/beta40-arm-production/artifact-verification.json
+ARM artifact index	FROZEN_DIGEST	sha256:6f46c01d5ba32ae7b1464c3715c7becbc3add49f4bd2f7423d89da3fbc26dba7; tag 2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64.	.local/beta40-arm-production/registry-index.json
+Existing rehearsal archive	HASH_AND_LIST_VERIFIED	Repaired stopped-writer archive ff2a6f3d... verified locally; historical input only, not fresh A or B.	.local/beta40-arm-production/existing-backup-verification.json
+Throwaway Daytona probe	BLOCKED_NATIVE_ARM	User permitted private Daytona; new private network-blocked sandbox booted x86_64; no secrets uploaded; probe deleted.	.local/beta40-arm-production/daytona-probe-info.json
+Retained data acceptance	NOT_RUN	No approved native ARM runner established. All requested runtime, migration, provider and registry checks remain unrun.	.local/beta40-arm-production/report.md

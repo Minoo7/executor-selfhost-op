@@ -1,6 +1,6 @@
 # Upgrade the self-hosted Executor to beta40
 
-Status is **PLAN ONLY**. Vincent requested this plan on 11 November 2026 at 20:10 Stockholm.
+Status is **RELEASE PREPARATION PARTIAL. NO DEPLOY APPROVAL**. Vincent requested this plan on 11 November 2026 at 20:10 Stockholm.
 The original plan granted no production permissions. The release-preparation authorization below supersedes only its named gates.
 The target is the upstream-first beta40 code reviewed in the isolated sandbox.
 Do not run the historical beta39 controller. Its broad log gate caused an unnecessary rollback.
@@ -16,6 +16,28 @@ Do not copy a running database directory as a substitute. If no safe snapshot ex
 The private retained-data rehearsal must remain egress-isolated. Real Geotorget login and natural Rakazo reconciliation need external egress and may change external state.
 Record those checks as blocked in the isolated copy unless separately approved scoped controls can prevent enrollment/start and protect copied credentials. Do not claim fixture or recorded responses as live provider acceptance.
 
+## Release preparation result at 21:24 Stockholm
+
+The native ARM64 build from frozen source `d22ca5ba0026abdb28fca0449f60472a383b1646` succeeded and is saved in Depot.
+
+| Artifact               | Verified value                                                                   |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| Tag                    | `registry.depot.dev/5884x6f4tn:2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64` |
+| Index                  | `sha256:6f46c01d5ba32ae7b1464c3715c7becbc3add49f4bd2f7423d89da3fbc26dba7`        |
+| ARM manifest           | `sha256:1d9ea246761591371fdfe1d3a6b9d6cf5682c675ef1ba644937fd34474f77bc9`        |
+| ARM raw workerd SHA256 | `7634ac29a730e8f100c4b47b1057a734740ad2f7309a8b4398c6e2f7dbf34578`               |
+
+Registry architecture, labels, baked version and pinned workerd contents passed static verification. Runtime HTTP and retained-data checks have **not run** on this artifact.
+The existing repaired stopped-writer data archive passed checksum/listing verification. Its SHA256 is `ff2a6f3dda35d1346823978f19fe38b3fcea9b2d4f9e6fbf983ce4b85cf5a6e2`, size 870090675 bytes.
+Its local path is `/Users/minoo/m4_projs/executor-selfhost-op/.local/pomerado-dns-20261111/deploy/backup/data-before.tar.gz`.
+It is historical input, not a fresh deployment backup B.
+
+Vincent allowed a new private Daytona probe. It reported private access and blocked network, but booted `x86_64`.
+Native ARM placement could not be established through the available CLI/account API. No secret-bearing data was uploaded and the probe was deleted.
+The native ARM retained-data rehearsal is **BLOCKED**, not passed. No production service was queried or changed.
+Detailed receipts and every requested check's status are in [.local/beta40-arm-production/report.md](../.local/beta40-arm-production/report.md).
+Select or establish native ARM access before resuming. The egress-isolated rehearsal cannot itself prove live Geotorget or registry access.
+
 ## Use this approval sequence
 
 One checkbox names one gate and the evidence that closes it. An unchecked gate blocks the next phase.
@@ -29,7 +51,7 @@ This is one service upgrade, not a PR merge program. No automatic merge or hourl
 5. Obtain Vincent's **explicit deploy approval for that digest** and maintenance window.
 6. Execute the final identity gate, fresh backup, activation, and verification. Roll back only under the rules below.
 
-This planning task stops at the document. No image promotion, production request, backup, deployment, or service action ran.
+The original planning task stopped at the document. The authorized preparation result above records the later ARM build. No production request, backup B, deployment, or live service action ran.
 
 ## Freeze the source and build an ARM production artifact
 
@@ -42,8 +64,8 @@ This planning task stops at the document. No image promotion, production request
       Its tag is `registry.depot.dev/5884x6f4tn:2.0.0-beta.40-sandbox-org-skills-runtime-d22ca5ba0`.
       Its index is `sha256:ecd521e4cb96b6dfe639b67ae6f9bf7da48527be619f90880df9b50be2327ddf`.
       It contains the tested **amd64** image. Production was recorded as **arm64**.
-- [ ] Build the normal complete source image for both platforms, with this proposed production identity.
-      `2.0.0-beta.40-org-instructions-skill-delete-runtime-d22ca5ba0`.
+- [ ] Build the normal complete source image for ARM64, with this production identity.
+      `2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64`.
       Retagging cannot change the baked header or add an ARM manifest. Do not use emulation as the production qualification.
 
 Run this only during separately authorized release preparation, in an isolated export of the exact code revision.
@@ -52,10 +74,10 @@ Do not switch or modify the canonical checkout.
 ```bash
 set -euo pipefail
 CODE_REV=d22ca5ba0026abdb28fca0449f60472a383b1646
-BUILD=2.0.0-beta.40-org-instructions-skill-delete-runtime-d22ca5ba0
+BUILD=2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64
 RELEASE_CONTEXT=$(mktemp -d)
 git archive "$CODE_REV" | tar -x -C "$RELEASE_CONTEXT"
-depot build --project 5884x6f4tn --platform linux/amd64,linux/arm64 \
+depot build --project 5884x6f4tn --platform linux/arm64 \
   --file "$RELEASE_CONTEXT/apps/hosted/self-host/Dockerfile" \
   --build-arg "EXECUTOR_BUILD_VERSION=$BUILD" \
   --label org.opencontainers.image.source=https://github.com/Minoo7/executor-selfhost-op \
@@ -65,8 +87,8 @@ depot build --project 5884x6f4tn --platform linux/amd64,linux/arm64 \
   --save --save-tag "$BUILD" "$RELEASE_CONTEXT"
 ```
 
-- [ ] Read the final registry index back and record its digest and both platform manifest digests.
-      Verify source and version labels, ARM architecture, the baked header, and the selected workerd binary on each platform.
+- [ ] Read the final registry index back and record its index and ARM platform manifest digests.
+      Verify source and version labels, ARM architecture, the baked header, and the selected workerd binary on ARM64.
       Pull with scoped private credentials and remove the credentials afterward. Do not move `latest`.
 - [ ] Keep the exact qualified image available through the maintenance and rollback window.
       Verify Depot retention or copy the index and every referenced manifest/blob to a durable approved repository.
@@ -207,14 +229,14 @@ Before activation approval, provide Vincent all of these values. Missing values 
 | Field                                          | Required value or current state                                                                                                                                                                                                               |
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Application source                             | Frozen `d22ca5ba0026abdb28fca0449f60472a383b1646`, or a separately reviewed replacement SHA                                                                                                                                                   |
-| Production build header                        | Proposed `2.0.0-beta.40-org-instructions-skill-delete-runtime-d22ca5ba0`                                                                                                                                                                      |
-| Production index and ARM manifest digests      | **Not built or assigned by this planning task**                                                                                                                                                                                               |
+| Production build header                        | Proposed `2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64`                                                                                                                                                                                   |
+| Production index and ARM manifest digests      | Built in the authorized preparation. See the exact verified digests in the release preparation result above. ARM runtime qualification remains blocked.                                                                                       |
 | Synthetic ARM baseline and stock ARM controls  | **Not built/selected**. Record both immutable manifest digests and labels before synthetic qualification.                                                                                                                                     |
-| Exact production baseline archive              | **Not collected**. Snapshot A must supply the verified `1f921aad...` image archive for retained-data rehearsal.                                                                                                                               |
-| ARM workerd binary hash                        | **Not derived**. Record gzip verification and the raw hash derived from the ARM archive, plus the candidate-container match.                                                                                                                  |
-| Private ARM runner and receipts                | **Not selected or run**                                                                                                                                                                                                                       |
+| Exact production baseline archive              | Existing off-host `1f921aad...` OCI index, ARM manifest, config and revision verified. No new production snapshot captured.                                                                                                                   |
+| ARM workerd binary hash                        | Raw ARM hash `7634ac29...` derived and matched to image-layer contents. A running-container match remains pending.                                                                                                                            |
+| Private ARM runner and receipts                | Daytona private probe booted x86_64 and was deleted. Native ARM runner not established.                                                                                                                                                       |
 | Fresh identity and required baseline workflows | **Not inspected in this planning task**                                                                                                                                                                                                       |
-| Snapshot A and private rehearsal               | **Not taken or run**                                                                                                                                                                                                                          |
+| Snapshot A and private rehearsal               | Existing stopped-writer archive verified locally. No new snapshot taken; rehearsal not run.                                                                                                                                                   |
 | Better Auth DDL and locking review             | **Not run**. Supply before/after schema, DDL diff, lock/write-blocking review, timing and repeat/full-restore receipts.                                                                                                                       |
 | Durable image repository and retention         | **Not selected/confirmed**. Record the exact repository/index/ARM manifests used for qualification and deployment.                                                                                                                            |
 | Snapshot destinations and space                | **Not approved**. Name encrypted off-host storage, runner identity, access controls, and the space receipts below before snapshot A.                                                                                                          |
@@ -253,7 +275,7 @@ COMPOSE_PROJECT=executor
 SERVICE=executor
 DATA_VOLUME=executor_executor-v2-data
 IMAGE="$PROD_IMAGE_REPOSITORY@$PROD_INDEX_DIGEST"
-BUILD=2.0.0-beta.40-org-instructions-skill-delete-runtime-d22ca5ba0
+BUILD=2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64
 ROLLBACK_IMAGE="executor-rollback:$RUN_ID-1677c7860"
 REVIEWED_COMPOSE_SHA=b590fc08bb714b46e10424a01fb38731aca756fcca91817cf715a0e5209405e9
 ```
