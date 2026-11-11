@@ -20,3 +20,4 @@ Automatic restore window	BOUNDED	Only ARMED before the persisted deadline; hold,
 ARM qualification inputs	MISSING	Build ARM synthetic1677 baseline and select stock beta40 ARM; actual production image comes separately from snapshot A.	Record all immutable digests and ARM raw workerd hash
 Probe fixture	APPROVAL_REQUIRED	Create after B with unique run name; reuse ID, preserve edits, conditionally remove after acceptance.	No credentials, schedules or external calls; approve visibility
 Dependency attribution	EXPLICIT_CONTROLS	Unknown network/provider failures hold; wrong digests and explicit correlated Executor failures request rollback.	No unapproved sidecar or network changes
+Release preparation 21:15	AUTHORIZED	ARM-only frozen-source build and private rehearsal authorized; no live stop/restart, backup B or activation.	Use existing verified snapshot only; never hot-copy DB

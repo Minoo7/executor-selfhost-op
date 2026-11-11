@@ -1,9 +1,20 @@
 # Upgrade the self-hosted Executor to beta40
 
 Status is **PLAN ONLY**. Vincent requested this plan on 11 November 2026 at 20:10 Stockholm.
-This document grants no permission to inspect, stop, back up, or change production.
+The original plan granted no production permissions. The release-preparation authorization below supersedes only its named gates.
 The target is the upstream-first beta40 code reviewed in the isolated sandbox.
 Do not run the historical beta39 controller. Its broad log gate caused an unnecessary rollback.
+
+## Release preparation authorized at 21:15 Stockholm
+
+Vincent authorized building the frozen-source ARM64 artifact and a private retained-data rehearsal on 11 November 2026.
+Deployment, backup B, Compose swap, volume rewrite, live Executor stop/restart and activation remain forbidden.
+The proposed ARM-only tag/header is `2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64`; it still names the same frozen application source.
+The earlier two-platform build recipe is optional release preparation. This run builds only native ARM64 and records its own immutable digest.
+Snapshot A's stopped-writer capture cannot run under the new no-stop/no-restart hard stop. Use an existing verified stopped-writer archive only if its provenance and approved private destination can be established.
+Do not copy a running database directory as a substitute. If no safe snapshot exists, report the rehearsal blocked while completing the authorized build.
+The private retained-data rehearsal must remain egress-isolated. Real Geotorget login and natural Rakazo reconciliation need external egress and may change external state.
+Record those checks as blocked in the isolated copy unless separately approved scoped controls can prevent enrollment/start and protect copied credentials. Do not claim fixture or recorded responses as live provider acceptance.
 
 ## Use this approval sequence
 
