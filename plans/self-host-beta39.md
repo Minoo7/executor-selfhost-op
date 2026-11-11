@@ -140,8 +140,9 @@ The driver and logs are in `.local/beta39-skill-delete/upgrade-context/` and
 
 The private proposed Compose copy is
 `.local/beta39-skill-delete/docker-compose.beta39.candidate.private.yml`.
-An object comparison verified that it changes only Executor's image and keeps the
-header override absent; all other services and settings match the source file.
+A byte-preserving edit and object comparison verified that it changes exactly one
+line, Executor's image, and keeps the header override absent. Every other line,
+including the otel-sink command, matches the reviewed source file.
 It has not been installed on cluster.
 
 The complete source Dockerfile builds the product, browser assets, app framework,
@@ -188,7 +189,11 @@ Reconfirm the host, source revision, image ID, mount and route immediately befor
 activation. Stop if any changed. Use the existing Compose project and exact file.
 Old Portainer stack IDs and definitions are historical, not the current file.
 
-Run the following in one root Bash session on cluster only after new approval.
+Save each command group below as a root-owned Bash script, then execute it with
+`bash <script>`, only after new approval. Do not paste `set -e` into an interactive
+root shell. An activation failure must leave the parent session available to run
+the separate rollback script. Recovery variables are saved before stopping the
+writer and sourced again by each subsequent script.
 Resolve the candidate's immutable index from `self-host-beta39-image.json`.
 Supply Depot's pull token privately. On a workstation,
 `depot pull-token --project 5884x6f4tn` can generate it.
@@ -204,6 +209,8 @@ BUILD=2.0.0-beta.39-org-instructions-skill-delete-865206c42
 IMAGE=registry.depot.dev/5884x6f4tn@sha256:962cd475cb48f2e9c389982642f84051918e42d7add6942f9763f1f489baab53
 BACKUP_DIR=/opt/executor/backups/beta39-skill-delete-865206c42
 ROLLBACK_IMAGE=executor-rollback:1677c7860-before-beta39-865206c42
+REVIEWED_COMPOSE_SHA=b4093df44583ac3e4d4efc18827af93de9b79c9d2b996e4e84833e6bc3d2f43b
+printf '%s  %s\n' "$REVIEWED_COMPOSE_SHA" "$COMPOSE_FILE" | sha256sum --check -
 CONTAINER=$(docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" ps -q "$EXECUTOR_SERVICE")
 test -n "$CONTAINER"
 test "$(docker inspect "$CONTAINER" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = 1677c7860872be67d214ad6b52d6d46b24d2fdec
@@ -224,6 +231,12 @@ docker tag "$OLD_IMAGE_ID" "$ROLLBACK_IMAGE"
 DATA_DIR=$(docker volume inspect "$DATA_VOLUME" --format '{{.Mountpoint}}')
 test -d "$DATA_DIR" && test ! -L "$DATA_DIR"
 stat -c '%u %g %a' "$DATA_DIR" > "$BACKUP_DIR/data-before.mode"
+declare -p COMPOSE_PROJECT COMPOSE_FILE EXECUTOR_SERVICE DATA_VOLUME BUILD IMAGE \
+  BACKUP_DIR ROLLBACK_IMAGE REVIEWED_COMPOSE_SHA CONTAINER OLD_IMAGE_ID DATA_DIR \
+  > "$BACKUP_DIR/recovery.env"
+chmod 600 "$BACKUP_DIR/recovery.env"
+docker save "$ROLLBACK_IMAGE" | gzip -1 > "$BACKUP_DIR/image-before.tar.gz"
+gzip -t "$BACKUP_DIR/image-before.tar.gz"
 ```
 
 Privately preserve any externally supplied keys and other persistent mounts.
@@ -232,28 +245,60 @@ states and suspend only confirmed Executor watchdogs during the maintenance.
 Do not change tsdproxy, Tailscale, telemetry or other services.
 
 ```sh
+set -euo pipefail
+source /opt/executor/backups/beta39-skill-delete-865206c42/recovery.env
+trap 'docker start "$CONTAINER" >&2 || true' ERR
 docker stop --time 30 "$CONTAINER"
-test -z "$(docker ps -q --filter "volume=$DATA_VOLUME")"
-docker save "$ROLLBACK_IMAGE" | gzip -1 > "$BACKUP_DIR/image-before.tar.gz"
+writers=$(docker ps -q --filter "volume=$DATA_VOLUME")
+test -z "$writers"
 tar --numeric-owner --xattrs --acls -C "$DATA_DIR" -cpf - . |
   gzip -1 > "$BACKUP_DIR/data-before.tar.gz"
 gzip -t "$BACKUP_DIR/data-before.tar.gz"
 tar -tzf "$BACKUP_DIR/data-before.tar.gz" >/dev/null
 stat -c '%s' "$BACKUP_DIR/data-before.tar.gz"
-(cd "$BACKUP_DIR" && sha256sum image-before.tar.gz data-before.tar.gz > SHA256SUMS)
+(cd "$BACKUP_DIR" && sha256sum image-before.tar.gz data-before.tar.gz docker-compose.before.private.yml > SHA256SUMS)
 (cd "$BACKUP_DIR" && sha256sum --check SHA256SUMS)
+trap - ERR
 ```
 
 Also confirm that no host process writes the data directory. Copy the complete
 backup and private configuration off-host and verify the same archive checksums
 there before activation. Do not reset databases or regenerate encryption keys.
+If backup or transfer fails before activation, resume the original container with
+`docker start "$CONTAINER"` and restore its recorded watchdog state. No database
+restore is needed before the candidate has opened the volume. The backup script's
+error trap resumes that original container if one of its commands fails.
 
 Update only `services.executor.image` in the existing Compose file to `$IMAGE`.
 Leave `EXECUTOR_BUILD_VERSION` absent from its environment. Keep all other values,
-volume mappings, services and network settings unchanged. A private proposed Compose
-copy can be prepared locally for review; it is not an applied production change.
+volume mappings, services and network settings unchanged. The script below first
+checks that the live file still matches the reviewed bytes, then replaces exactly
+one matching image line. It does not reserialize YAML or touch another service.
 
 ```sh
+set -euo pipefail
+source /opt/executor/backups/beta39-skill-delete-865206c42/recovery.env
+printf '%s  %s\n' "$REVIEWED_COMPOSE_SHA" "$COMPOSE_FILE" | sha256sum --check -
+export COMPOSE_FILE IMAGE REVIEWED_COMPOSE_SHA
+python3 - <<'PY'
+import hashlib, os, pathlib, re
+path = pathlib.Path(os.environ["COMPOSE_FILE"])
+before = path.read_bytes()
+assert hashlib.sha256(before).hexdigest() == os.environ["REVIEWED_COMPOSE_SHA"]
+pattern = rb'(?m)^(\s*image:\s*)executor-org-instructions:skill-delete-1677c7860-arm64\s*$'
+after, count = re.subn(pattern, lambda match: match.group(1) + os.environ["IMAGE"].encode(), before)
+assert count == 1
+old_lines, new_lines = before.splitlines(keepends=True), after.splitlines(keepends=True)
+assert len(old_lines) == len(new_lines)
+assert sum(left != right for left, right in zip(old_lines, new_lines)) == 1
+with path.open("r+b") as file:
+    assert hashlib.sha256(file.read()).hexdigest() == os.environ["REVIEWED_COMPOSE_SHA"]
+    file.seek(0)
+    file.write(after)
+    file.truncate()
+    file.flush()
+    os.fsync(file.fileno())
+PY
 docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" \
   up -d --no-deps --force-recreate "$EXECUTOR_SERVICE"
 CONTAINER=$(docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" ps -q "$EXECUTOR_SERVICE")
@@ -268,8 +313,10 @@ for attempt in $(seq 1 120); do
 done
 test "$ready" = 1
 docker exec "$CONTAINER" executor-host health
-curl --fail --silent --show-error --dump-header "$BACKUP_DIR/headers-after.txt" \
+curl --fail --silent --show-error \
   https://executor.planasolutions.ai/health -o "$BACKUP_DIR/health-after.json"
+curl --fail --silent --show-error --dump-header "$BACKUP_DIR/headers-after.txt" \
+  https://executor.planasolutions.ai/ -o /dev/null
 grep -Fi "executor-build: $BUILD" "$BACKUP_DIR/headers-after.txt"
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://executor.planasolutions.ai/org/executor/mcp)" = 401
 ```
@@ -279,6 +326,10 @@ instructions through an authorized API/MCP session if one is available. Anonymou
 401 is expected and must not be bypassed. Check representative credential-backed
 calls and skill deletion on approved fixtures before calling customer acceptance
 complete. Restore only the recorded Executor watchdog states after acceptance.
+The current baseline returned 401 at the named org MCP path during read-only
+inspection. That proves the anonymous auth boundary, not that an organization
+with that slug exists. The packaged-image smoke checks the build header on `/`;
+the activation script uses the same endpoint for that assertion.
 
 ## Immediate rollback on activation or verification failure
 
@@ -286,9 +337,22 @@ Stop confirmed Executor watchdogs and candidate writers. Do not start the old
 image on production data modified by the candidate; restore the snapshot too.
 
 ```sh
+set -euo pipefail
+source /opt/executor/backups/beta39-skill-delete-865206c42/recovery.env
 (cd "$BACKUP_DIR" && sha256sum --check SHA256SUMS)
-docker stop --time 30 "$CONTAINER"
-test -z "$(docker ps -q --filter "volume=$DATA_VOLUME")"
+container_ids=$(docker ps -a -q \
+  --filter "label=com.docker.compose.project=$COMPOSE_PROJECT" \
+  --filter "label=com.docker.compose.service=$EXECUTOR_SERVICE")
+containers=()
+if [ -n "$container_ids" ]; then
+  mapfile -t containers <<< "$container_ids"
+fi
+test "${#containers[@]}" -le 1
+if [ "${#containers[@]}" -eq 1 ]; then
+  docker stop --time 30 "${containers[0]}"
+fi
+writers=$(docker ps -q --filter "volume=$DATA_VOLUME")
+test -z "$writers"
 docker load -i "$BACKUP_DIR/image-before.tar.gz"
 test "$(docker image inspect "$ROLLBACK_IMAGE" --format '{{.Id}}')" = "$(cat "$BACKUP_DIR/image-before.id")"
 FAILED_DIR="${DATA_DIR}.candidate-$(date -u +%Y%m%dT%H%M%SZ)"

@@ -31,25 +31,62 @@
     "volume": "executor_executor-v2-data",
     "mount": "/app/data",
     "composeFile": "/root/executor-skill-delete-20261104/docker-compose.after.yml",
-    "unchangedStartedAt": "2026-11-09T13:52:50.251328166Z"
+    "unchangedStartedAt": "2026-11-09T13:52:50.251328166Z",
+    "sidecarContainerId": "ec7b7be30ea3eae848509aada70a1d0563c589c44edef0793a817dba5043308c",
+    "hostPortBinding": {
+      "hostIp": "127.0.0.1",
+      "hostPort": 4400,
+      "sidecarPort": "4400/tcp"
+    },
+    "networkMode": "container:ec7b7be30ea3eae848509aada70a1d0563c589c44edef0793a817dba5043308c",
+    "imageRevisionIndependentlyInspected": true
   },
   "assetComparisons": [
     {
       "name": "index-ChigAIkW.js",
       "bytes": 309878,
-      "sha256": "acf83f86084ff46401bf6ea5290565475ae52f583f54a42b887c10f00bafb1da"
+      "sha256": "acf83f86084ff46401bf6ea5290565475ae52f583f54a42b887c10f00bafb1da",
+      "hostname": {
+        "bytes": 309878,
+        "sha256": "acf83f86084ff46401bf6ea5290565475ae52f583f54a42b887c10f00bafb1da"
+      },
+      "loopback": {
+        "bytes": 309878,
+        "sha256": "acf83f86084ff46401bf6ea5290565475ae52f583f54a42b887c10f00bafb1da"
+      },
+      "match": true
     },
     {
       "name": "globals-a6oj2SOq.css",
       "bytes": 158591,
-      "sha256": "639bce46e3ab247831043d93646ba4fd4ba493c513baf6df6fb4bd9b28e30a31"
+      "sha256": "639bce46e3ab247831043d93646ba4fd4ba493c513baf6df6fb4bd9b28e30a31",
+      "hostname": {
+        "bytes": 158591,
+        "sha256": "639bce46e3ab247831043d93646ba4fd4ba493c513baf6df6fb4bd9b28e30a31"
+      },
+      "loopback": {
+        "bytes": 158591,
+        "sha256": "639bce46e3ab247831043d93646ba4fd4ba493c513baf6df6fb4bd9b28e30a31"
+      },
+      "match": true
     },
     {
       "name": "organization-BcuBBg33.js",
       "bytes": 432632,
-      "sha256": "2fa8902bb1df7346848bdc100d7579686cb47ba07fee71cd9b77c8574d8c10cf"
+      "sha256": "2fa8902bb1df7346848bdc100d7579686cb47ba07fee71cd9b77c8574d8c10cf",
+      "hostname": {
+        "bytes": 432632,
+        "sha256": "2fa8902bb1df7346848bdc100d7579686cb47ba07fee71cd9b77c8574d8c10cf"
+      },
+      "loopback": {
+        "bytes": 432632,
+        "sha256": "2fa8902bb1df7346848bdc100d7579686cb47ba07fee71cd9b77c8574d8c10cf"
+      },
+      "match": true
     }
   ],
   "internetReachability": "Not proven; hostname resolves to Tailscale address.",
-  "productionMutations": []
+  "productionMutations": [],
+  "anonymousOrgMcpStatus": 401,
+  "anonymousOrgMcpScope": "Auth boundary only; does not prove organization existence."
 }
