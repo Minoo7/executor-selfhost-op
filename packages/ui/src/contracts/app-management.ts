@@ -94,9 +94,10 @@ export const makeAppManagementAtoms = <R, E>(
       ),
   );
   /**
-   * Commit one text file on top of the current working source; a null base creates a new file. Like a Git host's web
-   * editor. A commit never deploys. Other files may have changed since the editor opened; the file itself must not have.
-   * The server's `expected` check still rejects a commit that lands between this read and write.
+   * Commit one text file on top of the current working source; a null base creates a new file and null content deletes
+   * the path, a file or a whole folder such as a skill. Like a Git host's web editor. A commit never deploys. Other files
+   * may have changed since the editor opened; the file itself must not have. The server's `expected` check still rejects
+   * a commit that lands between this read and write.
    */
   const commitFile = Atom.family((app: AppId) =>
     runtime.fn(
@@ -104,7 +105,7 @@ export const makeAppManagementAtoms = <R, E>(
         input: {
           path: string;
           base: string | null;
-          content: string;
+          content: string | null;
           message: string;
         },
         get,
@@ -120,12 +121,20 @@ export const makeAppManagementAtoms = <R, E>(
           const file = current.files.find((item) => item.path === input.path);
           if ((file === undefined || !isTextFile(file) ? null : file.content) !== input.base)
             return { _tag: "FileChanged" as const };
+          const content = input.content;
           const files =
-            file === undefined
-              ? Arr.append(current.files, { path: input.path, content: input.content })
-              : Arr.map(current.files, (item) =>
-                  item.path === input.path ? { path: item.path, content: input.content } : item,
-                );
+            content === null
+              ? Arr.filter(
+                  current.files,
+                  (item) => item.path !== input.path && !item.path.startsWith(`${input.path}/`),
+                )
+              : file === undefined
+                ? Arr.append(current.files, { path: input.path, content })
+                : Arr.map(current.files, (item) =>
+                    item.path === input.path ? { path: item.path, content } : item,
+                  );
+          if (!Arr.isArrayNonEmpty(files))
+            return yield* Effect.die(new Error("Deleting this path would leave empty app source."));
           const saved = yield* api.commit({
             params: { ...params, app },
             payload: { expected: current.revision.commit, files, message: input.message },

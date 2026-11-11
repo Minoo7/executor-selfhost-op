@@ -211,6 +211,25 @@ export function SkillFileEditor<E>({
       onCommitted({ commit: result.value.commit, deploy: true });
     }
   };
+  const remove = async () => {
+    const target = instructions ? `the ${skill} skill and all its files` : name;
+    if (savingRef.current || version.waiting || !window.confirm(`Delete ${target}?`)) return;
+    savingRef.current = true;
+    setSaving(true);
+    setError(undefined);
+    setChanged(false);
+    const result = await commit({
+      path: instructions ? path.slice(0, -"/SKILL.md".length) : path,
+      base: instructions ? null : base,
+      content: null,
+      message: `Delete ${instructions ? `${skill} skill` : `${skill}/${name}`}`,
+    });
+    savingRef.current = false;
+    setSaving(false);
+    if (Exit.isFailure(result)) setError(result.cause);
+    else if (result.value._tag === "FileChanged") setChanged(true);
+    else onCommitted({ commit: result.value.commit, deploy: true });
+  };
   const name = path.split("/").at(-1) ?? path;
   const label = instructions ? "Skill instructions" : `Edit ${name}`;
   const placeholder = instructions ? "Write skill instructions here…" : "Write file contents here…";
@@ -250,6 +269,13 @@ export function SkillFileEditor<E>({
               >
                 Vim mode
               </SwitchItem>
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={saving || version.waiting}
+                onSelect={remove}
+              >
+                {instructions ? "Delete skill" : "Delete file"}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           {dirty && (

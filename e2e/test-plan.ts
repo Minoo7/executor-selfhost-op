@@ -2223,6 +2223,19 @@ export const scenarios = plan({
       local: na("The shared skill reader is exercised through hosted organization routes."),
     },
   },
+  skillFileDelete: {
+    fixtures: "actors",
+    file: "skill-file-delete.spec.ts",
+    title:
+      "Skill deletion confirms file and folder removal, rejects stale files and preserves neighboring source",
+    targets: {
+      "self-host": scheduled,
+      cloud: sourceStorageCloud,
+      local: na(
+        "The shared editor and commit route are exercised through hosted organization routes.",
+      ),
+    },
+  },
   skillEditor: {
     fixtures: "actors",
     file: "skill-editor.spec.ts",
