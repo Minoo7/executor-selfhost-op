@@ -20,6 +20,13 @@ The older Compose/controller command bodies below are design references, not aut
 The qualified OCI archive is 80148480 bytes, SHA256 `0efb9b2ec21ec5941024cf40e9fe0e4535d2a83e61c5b65043fa7578f29ce644`, with all 31 referenced blobs verified. Source bundle SHA256 is `3ae4ad41a716657e269012ecc1fa3d00fb9c4132f71c266fccdc3ade2abf36a9` and requires upstream base `e3d989e4b977da51829ba006952c2c764c1f980f`. Registry retention remains unconfirmed. These local archives are preservation inputs, not permission to deploy.
 Build and native receipts are in [.local/beta40-org-skills-release-20261112/report.md](../.local/beta40-org-skills-release-20261112/report.md). Older runtime-customized image receipts remain historical and must not be used as the new release target.
 
+## Read-only Portainer preflight on 12 November
+
+**STOP_CONFIG_DRIFT. No production changes.** The live ARM container remains healthy on exact image `1f921aadddfee82de5fc796430bb1a83db963d4a95a048bcb1ac058eb051d6bb`, revision `1677c7860872be67d214ad6b52d6d46b24d2fdec`, using `executor_executor-v2-data` at `/app/data`.
+Portainer stack `1` (`executor`), endpoint `3`, is editor/file-managed with no Git configuration or automatic updates. Its saved Compose checksum is `b4093df44583ac3e4d4efc18827af93de9b79c9d2b996e4e84833e6bc3d2f43b`. The running container's Compose source remains `/root/executor-skill-delete-20261104/docker-compose.after.yml`, checksum `b590fc08bb714b46e10424a01fb38731aca756fcca91817cf715a0e5209405e9`.
+Resolved configuration differs in exactly one field, `services.executor.environment.EXECUTOR_URL_ALLOW_HTTP_ORIGINS`. Portainer retains `https://pomerado-aws.tailac7a97.ts.net:8080`; the running configuration uses the repaired `https://portainer-aws.tailac7a97.ts.net:8080`. An image-only update of the saved Portainer definition would undo that repair.
+Do not activate from the stale definition. The proposed next change must explicitly preserve the running repaired origin and update only the Executor image, after private configuration backups, fresh backup B and approval. No stack reconciliation, writer stop, backup B or deployment occurred during preflight. Safe metadata is in `.local/beta40-portainer-preflight-20261112/receipt.json`.
+
 ## Scope change on 12 November
 
 Vincent selected upstream behavior for large inputs and requested removal of our custom transport. Source `74c4d0b49c565ba27d340db4901a3243e04059e4` now restores the SDK/app-data input transport byte-for-byte to immutable upstream beta40 `e3d989e4b977da51829ba006952c2c764c1f980f`.
