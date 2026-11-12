@@ -1,0 +1,67 @@
+services:
+  tailscale:
+    image: tailscale/tailscale@sha256:c507f3a2a6ab1cabd8d809b98edeb41edbd5c3fb6ad9632ffd098b4c7d0b4065
+    container_name: executor-tailscale
+    restart: unless-stopped
+    environment:
+      TS_AUTH_ONCE: "true"
+      TS_HOSTNAME: executor-scape-egress
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+      TS_ACCEPT_DNS: "true"
+    volumes:
+      - scape-egress-state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    ports:
+      - 127.0.0.1:4400:4400
+    labels:
+      tsdproxy.enable: "true"
+      tsdproxy.name: granola-workspace
+      tsdproxy.domain: granola-workspace.executor.apps.planasolutions.ai
+      tsdproxy.dnstarget: 100.87.129.61
+      tsdproxy.port.1: "443/https:4400/http"
+    pull_policy: never
+  executor:
+    image: registry.depot.dev/5884x6f4tn@sha256:6bd69c2c64941d40821952511c6e829b1805a22e71ce5ae09b68fdac35c8da54
+    container_name: executor
+    cpu_shares: 4096
+    init: true
+    restart: unless-stopped
+    network_mode: service:tailscale
+    depends_on:
+      tailscale:
+        condition: service_started
+        restart: true
+    environment:
+      EXECUTOR_APP_UI_BASE_URL: https://apps.planasolutions.ai
+      EXECUTOR_CATALOG_URL: https://catalog.executor.sh/index.json
+      BETTER_AUTH_URL: https://executor.planasolutions.ai
+      EXECUTOR_URL_ALLOW_HTTP_ORIGINS: "${EXECUTOR_URL_ALLOW_HTTP_ORIGINS:?Set the production origin allowlist in Portainer}"
+      EXECUTOR_APPS_ALLOW_PRIVATE_FETCH: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
+    volumes:
+      - executor-v2-data:/app/data
+    pull_policy: never
+  otel-sink:
+    image: otel/opentelemetry-collector@sha256:6852803128c97a37fd2bafb989a04a10e3af920737d8eee998eefdfcebc698be
+    container_name: executor-otel-sink
+    restart: unless-stopped
+    network_mode: service:tailscale
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - /opt/executor/otel-sink.yaml:/etc/otelcol/config.yaml:ro
+    cpus: 0.25
+    depends_on:
+      tailscale:
+        condition: service_started
+volumes:
+  executor-v2-data:
+    external: true
+    name: executor_executor-v2-data
+  scape-egress-state:
+    external: true
+    name: scape-egress_scape-egress-state
