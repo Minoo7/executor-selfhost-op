@@ -1,15 +1,27 @@
 # Upgrade the self-hosted Executor to beta40
 
-Status is **OFFLINE ARM QUALIFICATION PASSED. LIVE GATES OPEN. NO DEPLOY APPROVAL**. Vincent requested this plan on 11 November 2026 at 20:10 Stockholm.
+Status is **SOURCE REVISED TO UPSTREAM INPUT TRANSPORT. NEW IMAGE REQUIRED. NO DEPLOY APPROVAL**. Vincent requested this plan on 11 November 2026 at 20:10 Stockholm.
 The original plan granted no production permissions. The release-preparation authorization below supersedes only its named gates.
 The target is the upstream-first beta40 code reviewed in the isolated sandbox.
 Do not run the historical beta39 controller. Its broad log gate caused an unnecessary rollback.
+
+## Scope change on 12 November
+
+Vincent selected upstream behavior for large inputs and requested removal of our custom transport. Source `74c4d0b49c565ba27d340db4901a3243e04059e4` now restores the SDK/app-data input transport byte-for-byte to immutable upstream beta40 `e3d989e4b977da51829ba006952c2c764c1f980f`.
+The chunk callback, inner stream helper and associated stream cleanup are removed, together with two custom large-input specs and their five scenario registrations. Upstream input-size limits are accepted. Organization MCP instructions and safe skill deletion are unchanged.
+The separate workerd cancellation pin and its native disconnect scenario remain unchanged pending Vincent's decision. Its demonstrated use is a synthetic waiting app; a Geotorget/Rakazo production dependency has not been established.
+
+Four named self-host scenarios passed on freshly prepared source, covering MCP cancellation, storage callbacks, workflow reuse and organization instructions. One Local tool/workflow scenario passed. Format, full check and protocol verification passed. No production access, deployment or publication occurred.
+The prior `d22ca5ba0` images and their native ARM receipts below are historical evidence. They contain the removed transport and **must not be deployed for the revised scope**. No replacement image has been built or accepted yet. Rebuild from the new source and record a new digest/header before approval; do not retag an old image.
+
+The SDK/app-data restoration changes no auth/schema/organization-instruction migration source. Earlier database findings remain historical evidence, not acceptance of the unbuilt new artifact. This scope change supersedes all earlier 35 MB success checks and production fixture requirements.
+Evidence is in `.local/beta40-upstream-transport-restoration/`; the original handoff also identifies its owned E2E report directories.
 
 ## Release preparation authorized at 21:15 Stockholm
 
 Vincent authorized building the frozen-source ARM64 artifact and a private retained-data rehearsal on 11 November 2026.
 Deployment, backup B, Compose swap, volume rewrite, live Executor stop/restart and activation remain forbidden.
-The proposed ARM-only tag/header is `2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64`; it still names the same frozen application source.
+The initial ARM-only tag/header was `2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64`; that artifact is now historical after the scope change above.
 The earlier two-platform build recipe is optional release preparation. This run builds only native ARM64 and records its own immutable digest.
 Snapshot A's stopped-writer capture cannot run under the new no-stop/no-restart hard stop. Use an existing verified stopped-writer archive only if its provenance and approved private destination can be established.
 Do not copy a running database directory as a substitute. If no safe snapshot exists, report the rehearsal blocked while completing the authorized build.
@@ -111,7 +123,7 @@ The original planning task stopped at the document. The authorized preparation r
 
 ## Freeze the source and build an ARM production artifact
 
-- [ ] Use branch `experiment/beta40-upstream-first-20261111` and freeze application source at `d22ca5ba0026abdb28fca0449f60472a383b1646`.
+- [ ] Use branch `experiment/beta40-upstream-first-20261111` and freeze application source at `74c4d0b49c565ba27d340db4901a3243e04059e4`, subject to the separate cancellation-pin decision.
       Later documentation, E2E and top-level operator-tool commits do not change that application/build revision. Preserve the canonical beta39 branch at `eadfc28`.
 - [ ] Record immutable upstream beta40 base `e3d989e4b977da51829ba006952c2c764c1f980f`.
 - [ ] Preserve that code revision in an approved remote release ref or a checksum-verified Git bundle before deployment.
@@ -121,7 +133,7 @@ The original planning task stopped at the document. The authorized preparation r
       Its index is `sha256:ecd521e4cb96b6dfe639b67ae6f9bf7da48527be619f90880df9b50be2327ddf`.
       It contains the tested **amd64** image. Production was recorded as **arm64**.
 - [ ] Build the normal complete source image for ARM64, with this production identity.
-      `2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64`.
+      Proposed if the cancellation pin remains: `2.0.0-beta.40-org-skills-cancel-74c4d0b4-arm64`.
       Retagging cannot change the baked header or add an ARM manifest. Do not use emulation as the production qualification.
 
 Run this only during separately authorized release preparation, in an isolated export of the exact code revision.
@@ -129,8 +141,8 @@ Do not switch or modify the canonical checkout.
 
 ```bash
 set -euo pipefail
-CODE_REV=d22ca5ba0026abdb28fca0449f60472a383b1646
-BUILD=2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64
+CODE_REV=74c4d0b49c565ba27d340db4901a3243e04059e4
+BUILD=2.0.0-beta.40-org-skills-cancel-74c4d0b4-arm64
 RELEASE_CONTEXT=$(mktemp -d)
 git archive "$CODE_REV" | tar -x -C "$RELEASE_CONTEXT"
 depot build --project 5884x6f4tn --platform linux/arm64 \
@@ -152,11 +164,11 @@ depot build --project 5884x6f4tn --platform linux/arm64 \
 - [ ] Run actual ARM Linux containers on an operator-controlled, non-production runner.
       The completed Depot runners and isolation receipts are recorded above. Record a new approved runner if further qualification is needed. Do not send production data or keys to the public Daytona review sandbox or a Depot build.
       If a private ARM runner is unavailable, stop qualification.
-- [ ] Run the five named Docker migration/disconnect cases and the exact-input checks against the production-tagged artifact.
+- [ ] Run the named Docker migration/disconnect cases and normal upstream tool calls against the newly built artifact. No custom oversized-input success check is required.
       Record test titles, counts, image digests, logs, and build headers. Run only named scenarios.
       BuildKit `RUN` smoke tests and the verified gzip hashes alone do not establish ARM container acceptance.
-- [x] Supply all three distinct ARM images required by the migration spec.
-      The verified archived production ARM image supplied the baseline. The candidate and stock-control manifest digests are recorded above and in `.local/beta40-arm-followup/stock-arm-image.json`.
+- [ ] Supply all three distinct ARM images required by the migration spec. The revised candidate has not been built.
+      The verified archived production ARM image supplied the baseline. The historical candidate and stock-control manifest digests are recorded above and in `.local/beta40-arm-followup/stock-arm-image.json`; only the baseline/stock controls remain reusable inputs for revised qualification.
       Synthetic migration fixtures used these images without accessing production. The amd64-only `10023ab...` baseline was not used.
 - [ ] Derive the expected ARM workerd binary SHA256 by decompressing the verified `linux-arm64` archive pinned in `workerd.json`.
       Its gzip SHA256 is `f22cf953782ba645e45dbab96d5a1f9cf429389c8e7da840793448068db26ce9`.
@@ -168,15 +180,15 @@ Any application or trust-policy fix changes the source SHA, build identity, and 
 
 ## Approve what ships and what is deferred
 
-| Behavior                       | Production proposal                                                                                                                                                                                                           |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Organization MCP instructions  | Ship admin browser-session saves, strict revision CAS, 8192-unit limit, member reads, and request-scoped initialize/stateless discovery. Preserve the deployed table and `10_org_mcp_instructions` identity.                  |
-| Skill file and folder deletion | Ship the rebuilt dashboard flow. Confirm a fixed review, compare the selected subtree with a fresh read, preserve unrelated edits, and commit with an expected revision. Deletion does not deploy the whole working revision. |
-| Large input                    | Ship bounded invocation-owned outer chunks and native inner streams through stateless, supervisor, and facet hops. No public app API change or raised message cap.                                                            |
-| Cancellation                   | Ship unused-body cleanup and the existing `Minoo7/workerd` cancellation backport as a separate pin. Require ARM native disconnect acceptance.                                                                                 |
-| Saved accounts                 | Use upstream personal/shared creation and app-scope linking. Do not ship ownership conversion or the extra in-list sharing controls. Do not convert or delete stored accounts to match the UI.                                |
-| Credential entry               | Use upstream exact multiline paste/drop and privacy controls. **Credential file upload is explicitly deferred for production.** The button is absent. Existing saved credentials remain.                                      |
-| Private HTTPS allowlist        | Keep upstream behavior and the current operator configuration, including the repaired Geotorget origin.                                                                                                                       |
+| Behavior                       | Production proposal                                                                                                                                                                                                               |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Organization MCP instructions  | Ship admin browser-session saves, strict revision CAS, 8192-unit limit, member reads, and request-scoped initialize/stateless discovery. Preserve the deployed table and `10_org_mcp_instructions` identity.                      |
+| Skill file and folder deletion | Ship the rebuilt dashboard flow. Confirm a fixed review, compare the selected subtree with a fresh read, preserve unrelated edits, and commit with an expected revision. Deletion does not deploy the whole working revision.     |
+| Large input                    | Use exact upstream beta40 input transport and limits. Custom chunking/streaming and oversized-input success requirements were removed at Vincent's request.                                                                       |
+| Cancellation                   | The separate Minoo7/workerd pin remains unchanged in source, pending a scope decision. Its benefit is demonstrated by synthetic disconnect tests, not a proven production-app dependency. Custom input-stream cleanup is removed. |
+| Saved accounts                 | Use upstream personal/shared creation and app-scope linking. Do not ship ownership conversion or the extra in-list sharing controls. Do not convert or delete stored accounts to match the UI.                                    |
+| Credential entry               | Use upstream exact multiline paste/drop and privacy controls. **Credential file upload is explicitly deferred for production.** The button is absent. Existing saved credentials remain.                                          |
+| Private HTTPS allowlist        | Keep upstream behavior and the current operator configuration, including the repaired Geotorget origin.                                                                                                                           |
 
 - [ ] Include the loss of the file-upload button and ownership-conversion controls in the deploy approval.
 - [ ] Verify existing account ownership, encrypted credential hashes, generation, grants, and app links on the retained-data rehearsal.
@@ -281,9 +293,9 @@ Before activation approval, provide Vincent all of these values. Missing values 
 
 | Field                                          | Required value or current state                                                                                                                                                                                                                                     |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Application source                             | Frozen `d22ca5ba0026abdb28fca0449f60472a383b1646`, or a separately reviewed replacement SHA                                                                                                                                                                         |
-| Production build header                        | Proposed `2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64`                                                                                                                                                                                                         |
-| Production index and ARM manifest digests      | Built in the authorized preparation. See the exact verified digests in the release preparation result above. Native ARM offline runtime qualification passed; live workflow gates remain.                                                                           |
+| Application source                             | Current 74c4d0b49c565ba27d340db4901a3243e04059e4 on experiment/beta40-upstream-first-20261111; separate cancellation-pin decision remains.                                                                                                                          |
+| Production build header                        | No revised image built. Proposed if pin remains: 2.0.0-beta.40-org-skills-cancel-74c4d0b4-arm64.                                                                                                                                                                    |
+| Production index and ARM manifest digests      | NOT BUILT for revised source. Earlier d22 images contain the withdrawn transport and cannot satisfy the current release scope.                                                                                                                                      |
 | Synthetic ARM baseline and stock ARM controls  | Archived exact ARM baseline and stock ARM control supplied; see the follow-up result and image receipts.                                                                                                                                                            |
 | Exact production baseline archive              | Existing off-host `1f921aad...` OCI index, ARM manifest, config and revision verified. No new production snapshot captured.                                                                                                                                         |
 | ARM workerd binary hash                        | Raw ARM hash `7634ac29...` derived and matched to image-layer contents. The native runtime also returned the exact baked header during this rehearsal.                                                                                                              |
@@ -294,7 +306,7 @@ Before activation approval, provide Vincent all of these values. Missing values 
 | Durable image repository and retention         | Depot retention unconfirmed. Complete verified OCI archive preserved locally; validate registry availability or an approved durable copy before activation.                                                                                                         |
 | Snapshot destinations and space                | **Open capacity gate**. Mac hit ENOSPC. Name and verify adequate encrypted off-host storage and free-space reserve before any production stop.                                                                                                                      |
 | Verifier authentication                        | Record authorized actor/resource/scopes and validity through the window plus 30 minutes for recovery. If TTL is opaque, require a successful validity probe and an operator available to renew it. Do not send email codes or broaden grants.                       |
-| Dependency controls and fixture                | Approve the per-workflow controls below and the private fixture source, ownership, visibility and removal policy. Unavailable controls force HOLD for ambiguous network failures.                                                                                   |
+| Dependency controls and fixture                | Per-workflow controls remain required. The custom large-input fixture is withdrawn. Any destructive skill fixture needs separately approved visibility and cleanup.                                                                                                 |
 | Risks accepted or fixed                        | Each item in the risk table below                                                                                                                                                                                                                                   |
 | Maintenance budget                             | Proposed 30-minute window, not a measured downtime estimate. Include off-host transfer and a 10-minute acceptance window.                                                                                                                                           |
 | Exact scripts/controller                       | Stage new beta40 scripts, syntax-check and exercise them on the private rehearsal before approval. No old beta39 log-grep controller.                                                                                                                               |
@@ -318,8 +330,9 @@ umask 077
 [[ "$PROD_INDEX_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
 [[ "$APPROVED_WINDOW_END_EPOCH" =~ ^[0-9]+$ ]]
 test "$PROD_INDEX_DIGEST" != sha256:ecd521e4cb96b6dfe639b67ae6f9bf7da48527be619f90880df9b50be2327ddf
+test "$PROD_INDEX_DIGEST" != sha256:6f46c01d5ba32ae7b1464c3715c7becbc3add49f4bd2f7423d89da3fbc26dba7
 BACKUP_PHASE=B
-RUN_ID="beta40-d22ca5ba0-$(date -u +%Y%m%dT%H%M%SZ)"
+RUN_ID="beta40-74c4d0b4-$(date -u +%Y%m%dT%H%M%SZ)"
 STAGE_DIR="/opt/executor/upgrades/$RUN_ID"
 BACKUP_DIR="/opt/executor/backups/$RUN_ID"
 PROJECT_DIR=/root/executor-skill-delete-20261104
@@ -328,7 +341,7 @@ COMPOSE_PROJECT=executor
 SERVICE=executor
 DATA_VOLUME=executor_executor-v2-data
 IMAGE="$PROD_IMAGE_REPOSITORY@$PROD_INDEX_DIGEST"
-BUILD=2.0.0-beta.40-org-skills-runtime-d22ca5ba0-arm64
+BUILD=2.0.0-beta.40-org-skills-cancel-74c4d0b4-arm64
 ROLLBACK_IMAGE="executor-rollback:$RUN_ID-1677c7860"
 REVIEWED_COMPOSE_SHA=b590fc08bb714b46e10424a01fb38731aca756fcca91817cf715a0e5209405e9
 ```
@@ -387,14 +400,14 @@ gzip -t "$BACKUP_DIR/image-before.tar.gz"
 
 - [ ] Install the reviewed scripts and their recorded hashes in this root-owned stage.
       Require the no-writer verifier to accept `DATA_DIR` and inspect writable handles/mappings.
-      Only then atomically point `/opt/executor/upgrades/beta40-d22ca5ba0.current` at this B stage.
+      Only then atomically point `/opt/executor/upgrades/beta40-74c4d0b4.current` at this B stage.
       Record its physical path and run ID in the operator receipt. A must never create that pointer or contain `rollback.sh`.
 - [ ] Suspend only the confirmed Executor watchdog. Leave an already disabled update timer unchanged.
 - [ ] Stop only Executor, then archive. A failed `docker ps` must fail the assignment, not masquerade as an empty writer list.
 
 ```bash
 set -euo pipefail
-source /opt/executor/upgrades/beta40-d22ca5ba0.current/recovery.env
+source /opt/executor/upgrades/beta40-74c4d0b4.current/recovery.env
 test "$BACKUP_PHASE" = B
 docker stop --time 30 "$CONTAINER"
 writers=$(docker ps -q --filter "volume=$DATA_VOLUME")
@@ -430,7 +443,7 @@ On the authorized operator workstation, use the exact B run ID from the host rec
 set -euo pipefail
 umask 077
 : "${RUN_ID:?Use the exact B run ID from the host receipt}"
-[[ "$RUN_ID" =~ ^beta40-d22ca5ba0-[0-9]{8}T[0-9]{6}Z$ ]]
+[[ "$RUN_ID" =~ ^beta40-74c4d0b4-[0-9]{8}T[0-9]{6}Z$ ]]
 OFFHOST_DIR="/Users/minoo/.executor-upgrade-backups/$RUN_ID"
 mkdir -m 700 -p "$OFFHOST_DIR"
 rsync -a --no-owner --no-group --rsync-path='sudo -n rsync' \
@@ -492,7 +505,7 @@ These CLI checks do not qualify Linux installation, atomic live replacement, bac
 
 ```bash
 set -euo pipefail
-source /opt/executor/upgrades/beta40-d22ca5ba0.current/recovery.env
+source /opt/executor/upgrades/beta40-74c4d0b4.current/recovery.env
 docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
   -f "$COMPOSE_FILE" up -d --no-deps --pull never --force-recreate "$SERVICE"
 CONTAINER=$(docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
@@ -509,13 +522,8 @@ test -n "$CONTAINER"
 - [ ] Complete authenticated Geotorget whoami through Executor using the existing saved account. Require the expected customer and terminal successful job, not only MCP initialization or an input-required response.
 - [ ] Observe at least two fresh successful Rakazo `computers` schedule occurrences after candidate startup, within the 10-minute healthy observation period.
       Require the same enabled interval, registry URL, source versions, working files, and stopped computer states. Do not trigger the mutation manually.
-- [ ] After backup B, create the approved disposable fixture named `upgrade-probe-$RUN_ID` on the candidate, with no accounts, schedules, outbound requests or real data.
-      Its qualified source exposes only exact digest tools for stateless and SQL-facet invocation. Record its app ID, owner, source hash and active revision immediately.
-      Approve its member visibility explicitly if the native model cannot make it private. Never modify a real app or publish its working tree.
-      Run the small control and 35,200,010-byte input, requiring exact length, UTF-8 bytes and SHA256 on both paths.
-      On retry use the recorded app ID. After a lost creation response, recover it by exact name, owner and source inspection; never blindly redeploy by name or overwrite an existing app.
-      After acceptance, remove only this fixture through the supported API if its source/active revision is unchanged and it has no user edits. Otherwise retain it and report why.
-      Fixture creation and conditional removal are production writes covered by deploy approval. Full snapshot rollback removes it automatically.
+- [ ] Verify a normal read-only tool call through an existing approved app. Geotorget whoami may supply this control.
+      No custom large-input app is created or removed in production for this release scope. Upstream-size-limit failures alone are not a regression against a withdrawn custom requirement.
 - [ ] Compare both app deployment IDs and unpublished working refs/content with backup B. Confirm account links/grants and sidecar IDs/start times remain intact.
 - [ ] Observe health, crashes/restarts, required workflow receipts, and logs for 10 minutes after readiness, completing within the 15-minute activation budget. Restore the original safe Executor watchdog state after acceptance, then check health again.
 
@@ -529,17 +537,15 @@ The new controller must use explicit verifier outcomes, not `grep ERROR` and not
 
 Use these controls and classifications. No helper container, sidecar command, network-policy change or new grant is authorized merely to obtain a control.
 
-| Check                     | Attributable failure requesting outcome 20                                                                                         | Ambiguous outcome requiring 30                                                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Startup/storage/identity  | Failed migration, failed health within the qualified startup deadline, crash/OOM loop, missing preserved data or wrong image/mount | Missing evidence or unavailable verifier                                                                        |
-| Geotorget                 | Explicit Executor credential/decryption/runtime failure or a completed authenticated result for the wrong customer                 | Provider/login/network failure without an independently approved passing control                                |
-| Rakazo                    | Fresh `status` proves a successful current registry fetch but the preserved enabled schedule fails inside Executor                 | `status` cannot prove a fresh fetch, or registry/network control also fails                                     |
-| Organization instructions | Preserved additions/revision differ, wrong combined text, or an explicit MCP initialization error with valid auth                  | Expired auth, ingress failure, or unavailable evidence                                                          |
-| Large input               | Wrong exact digest or an explicit Executor transport/runtime error on a qualified fixture                                          | Public ingress 413/502 or timeout without a separately approved normal-auth loopback control isolating Executor |
-| Skill deletion            | Qualified fixture deletion changes neighbours, active version, or unrelated files                                                  | Unavailable browser/auth evidence                                                                               |
+| Check                     | Attributable failure requesting outcome 20                                                                                         | Ambiguous outcome requiring 30                                                   |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Startup/storage/identity  | Failed migration, failed health within the qualified startup deadline, crash/OOM loop, missing preserved data or wrong image/mount | Missing evidence or unavailable verifier                                         |
+| Geotorget                 | Explicit Executor credential/decryption/runtime failure or a completed authenticated result for the wrong customer                 | Provider/login/network failure without an independently approved passing control |
+| Rakazo                    | Fresh `status` proves a successful current registry fetch but the preserved enabled schedule fails inside Executor                 | `status` cannot prove a fresh fetch, or registry/network control also fails      |
+| Organization instructions | Preserved additions/revision differ, wrong combined text, or an explicit MCP initialization error with valid auth                  | Expired auth, ingress failure, or unavailable evidence                           |
+| Skill deletion            | Qualified fixture deletion changes neighbours, active version, or unrelated files                                                  | Unavailable browser/auth evidence                                                |
 
-A passing baseline with the same scope supports attribution for existing workflows. New feature correctness does not require beta32 to pass a 35 MB call.
-The private rehearsal does not qualify 35 MB through production tsdproxy. An ingress-only failure therefore holds unless a separately approved control isolates the candidate.
+A passing baseline with the same scope supports attribution for existing workflows. Large-input custom success is no longer part of acceptance. Unclassified ingress failures hold unless an approved control isolates an Executor regression.
 For Rakazo, verify that `status` actually performs a fresh registry fetch before using it as that control; a cached status is insufficient.
 Explicit Executor errors still require request/job correlation, rather than a matching generic log string.
 
@@ -612,10 +618,10 @@ docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
 
 | Risk                                        | Proposed disposition before deployment                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Review image is amd64-only                  | Closed for offline acceptance. Native ARM artifact and five distinct named release cases passed; live integration remains open.                                                                                                                                                                                                                                                                                                             |
+| Review image is amd64-only                  | A new ARM artifact must be built and qualified from the revised source. Earlier ARM acceptance applies to the old d22 image only.                                                                                                                                                                                                                                                                                                           |
 | Production-state migrations                 | Must close. Private retained-data rehearsal and full restore passed; the historical auth plan is empty. Fresh backup B/off-host checksums and fresh schema review remain. Do not claim a current-production migration no-op.                                                                                                                                                                                                                |
 | Client-IP/Better Auth warning               | Conditional acceptance for this upgrade if baseline and candidate auth work without a regression. The native host overwrites `x-executor-client-ip` from its TCP peer, runtime auth consumes it, and schema setup uses different options. The exact warning source/bucketing needs diagnosis. Do not trust arbitrary forwarded headers, disable rate limits, or invent an env fix. A trust-policy fix needs a new reviewed source/artifact. |
-| Cancellation during input transfer          | Explicit residual uncertainty. Completed-transfer MCP cancellation, slot reuse, and native disconnect passed. Native ARM dropped-response acceptance passed. Do not claim mid-transfer coverage. If Vincent requires it as a release gate, add an observable held-transfer E2E before promotion.                                                                                                                                            |
+| Cancellation                                | The separate Minoo7/workerd pin remains unchanged in source, pending a scope decision. Its benefit is demonstrated by synthetic disconnect tests, not a proven production-app dependency. Custom input-stream cleanup is removed.                                                                                                                                                                                                           |
 | Generic workerd termination/timeouts        | Accept observation with the attribution rule, not a clean-log promise. Investigate separately. Crashes, resource exhaustion, or attributable workflow failures still request rollback.                                                                                                                                                                                                                                                      |
 | Telemetry trace-export warning              | Recheck local collector/export health during qualification. Capture failures without changing the telemetry service. Obtain explicit acceptance if still unresolved.                                                                                                                                                                                                                                                                        |
 | Credential file upload absent               | Explicit production deferral. Upstream multiline paste/drop is the approved replacement. No saved secret is deleted.                                                                                                                                                                                                                                                                                                                        |
