@@ -128,15 +128,5 @@ export const releasedServer = Effect.gen(function* () {
       Effect.andThen(run(["start", id])),
       Effect.andThen(ready),
     );
-  return {
-    json,
-    prefix,
-    deploy,
-    exec,
-    restart,
-    restartAfter,
-    encryptionKey,
-    address: `http://127.0.0.1:${port}`,
-    organization,
-  };
+  return { json, prefix, deploy, exec, restart, restartAfter, encryptionKey };
 });

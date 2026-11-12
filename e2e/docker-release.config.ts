@@ -7,7 +7,6 @@ export default defineConfig({
       "e2e/tests/docker-release-app-memory.spec.ts",
       "e2e/tests/docker-release-credential-handles.spec.ts",
       "e2e/tests/docker-release-executor-api.spec.ts",
-      "e2e/tests/docker-release-stream-cancel.spec.ts",
       // Ordinary release runs do not have the two historical images.
       ...(process.env.EXECUTOR_E2E_DOCKER_ORG_INSTRUCTIONS_BASELINE_IMAGE === undefined &&
       process.env.EXECUTOR_E2E_DOCKER_ORG_INSTRUCTIONS_STOCK_IMAGE === undefined

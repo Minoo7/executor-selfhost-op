@@ -17,7 +17,8 @@ const InternalWorker = Schema.Struct({
   modules: Schema.Record(Schema.String, Schema.String),
 });
 /**
- * The self-host image uses the repository, release and SHA-256 in `workerd.json`. It adds idle-isolate garbage collection, TCMalloc
+ * The self-host image runs Executor's build of workerd (UsefulSoftwareCo/workerd), pinned by
+ * release and SHA-256 in `workerd.json`. It adds idle-isolate garbage collection, TCMalloc
  * release and Worker loader idle unloading, configured by `memory` in the generated config.
  */
 const WorkerdPin = Schema.Struct({
