@@ -1,20 +1,35 @@
 # Upgrade the self-hosted Executor to beta40
 
-Status is **SOURCE REVISED TO UPSTREAM INPUT TRANSPORT. NEW IMAGE REQUIRED. NO DEPLOY APPROVAL**. Vincent requested this plan on 11 November 2026 at 20:10 Stockholm.
+Status is **UPSTREAM RUNTIME RESTORED. NEW ARM IMAGE BUILT AND SYNTHETICALLY QUALIFIED. NO DEPLOY APPROVAL**. Vincent requested this plan on 11 November 2026 at 20:10 Stockholm.
 The original plan granted no production permissions. The release-preparation authorization below supersedes only its named gates.
 The target is the upstream-first beta40 code reviewed in the isolated sandbox.
 Do not run the historical beta39 controller. Its broad log gate caused an unnecessary rollback.
+
+## Current release scope and Portainer owner
+
+Vincent deferred the custom cancellation runtime until a real app needs it and confirmed that Portainer owns the production stack. Current source is `9d19eb8480b3aba979ac527c38cfdc005dda709f`. Self-host runtime/pin/packager, SDK and app-data trees now match immutable upstream beta40 exactly. The retained product customizations are organization-wide MCP instructions (including its schema identity guard and Effect extension) and safe dashboard skill deletion.
+The custom native-disconnect scenario and its helper-only return fields are removed with the deferred runtime guarantee. Ordinary upstream MCP cancellation coverage remains. Three focused source E2E scenarios passed for cancellation, organization instructions and skill deletion; format/full check passed.
+
+New image `registry.depot.dev/5884x6f4tn:2.0.0-beta.40-org-skills-9d19eb848-arm64` was built natively from the frozen commit with upstream's Dockerfile. Registry verification read back index `sha256:6bd69c2c64941d40821952511c6e829b1805a22e71ce5ae09b68fdac35c8da54` and ARM manifest `sha256:287961b0a921d232580677b63637e81067bffce38c84522ea573d12c41e37f7f`, checked their content hashes, source/version labels and baked build identity.
+Its synthetic native ARM smoke checks passed health, exact header, login HTML, anonymous MCP401, organization guidance in initialize/discovery and a normal tool call. The packaged workerd matched the checksum-verified upstream ARM release. All four named native ARM migration/recovery scenarios passed in one run. The private runner finished and its files were removed. These synthetic checks do not constitute deployment approval.
+
+Portainer ownership is confirmed by Vincent, not inferred from an old container label. The exact current stack ID, endpoint, configuration/environment and Git-backed versus editor-managed mode must be recorded read-only before any change. Use Portainer's existing stack ownership for activation and image reversion, preserving all services/env/volumes/ports. Do not bypass it by rewriting host Compose files or enabling automatic Git updates. No Portainer or production API request has been made for this preparation.
+Use the existing source mode: update the pinned Executor image in its Git source if Git-backed, or in its current Portainer stack definition otherwise. Rebuild is not a reason to migrate stack ownership. Keep the current stopped-writer backup/off-host verification and data-restore requirements. An image reversion in Portainer does not restore a database backup.
+The older Compose/controller command bodies below are design references, not authority to bypass Portainer. A general controller is not required for Executor self-hosting; before activation, finalize the short Portainer update/data-restore procedure and either satisfy the requested automatic rollback rule with a reviewed narrow script or obtain an explicit change to supervised recovery. No deployment is authorized here.
+
+The qualified OCI archive is 80148480 bytes, SHA256 `0efb9b2ec21ec5941024cf40e9fe0e4535d2a83e61c5b65043fa7578f29ce644`, with all 31 referenced blobs verified. Source bundle SHA256 is `3ae4ad41a716657e269012ecc1fa3d00fb9c4132f71c266fccdc3ade2abf36a9` and requires upstream base `e3d989e4b977da51829ba006952c2c764c1f980f`. Registry retention remains unconfirmed. These local archives are preservation inputs, not permission to deploy.
+Build and native receipts are in [.local/beta40-org-skills-release-20261112/report.md](../.local/beta40-org-skills-release-20261112/report.md). Older runtime-customized image receipts remain historical and must not be used as the new release target.
 
 ## Scope change on 12 November
 
 Vincent selected upstream behavior for large inputs and requested removal of our custom transport. Source `74c4d0b49c565ba27d340db4901a3243e04059e4` now restores the SDK/app-data input transport byte-for-byte to immutable upstream beta40 `e3d989e4b977da51829ba006952c2c764c1f980f`.
 The chunk callback, inner stream helper and associated stream cleanup are removed, together with two custom large-input specs and their five scenario registrations. Upstream input-size limits are accepted. Organization MCP instructions and safe skill deletion are unchanged.
-The separate workerd cancellation pin and its native disconnect scenario remain unchanged pending Vincent's decision. Its demonstrated use is a synthetic waiting app; a Geotorget/Rakazo production dependency has not been established.
+That intermediate source still retained the cancellation pin. Vincent subsequently deferred it; the current upstream-runtime scope above supersedes that intermediate state.
 
 Four named self-host scenarios passed on freshly prepared source, covering MCP cancellation, storage callbacks, workflow reuse and organization instructions. One Local tool/workflow scenario passed. Format, full check and protocol verification passed. No production access, deployment or publication occurred.
-The prior `d22ca5ba0` images and their native ARM receipts below are historical evidence. They contain the removed transport and **must not be deployed for the revised scope**. No replacement image has been built or accepted yet. Rebuild from the new source and record a new digest/header before approval; do not retag an old image.
+The prior `d22ca5ba0` images and their native ARM receipts below are historical evidence. They contain the removed transport and **must not be deployed for the revised scope**. At that intermediate checkpoint no replacement image existed. The later upstream-runtime image and acceptance are recorded above; do not retag or deploy an old image.
 
-The SDK/app-data restoration changes no auth/schema/organization-instruction migration source. Earlier database findings remain historical evidence, not acceptance of the unbuilt new artifact. This scope change supersedes all earlier 35 MB success checks and production fixture requirements.
+The SDK/app-data restoration changes no auth/schema/organization-instruction migration source. Earlier database findings remain historical evidence. The current release section separately records the rebuilt artifact's synthetic acceptance. This scope change supersedes all earlier 35 MB success checks and production fixture requirements.
 Evidence is in `.local/beta40-upstream-transport-restoration/`; the original handoff also identifies its owned E2E report directories.
 
 ## Release preparation authorized at 21:15 Stockholm
@@ -85,7 +100,7 @@ The complete candidate OCI archive is `.local/beta40-arm-followup/candidate-oci.
 All 31 referenced OCI blobs were verified. Depot retention could not be confirmed with the available user token. This archive preserves the artifact but is not an automatic deployment fallback. Recheck registry availability or validate an approved import/publication path before activation.
 The source bundle `.local/beta40-arm-followup/release-d22ca5ba0.bundle` has SHA256 `bb17ec762bb7d06c083b4efc891c1d109a7cbf1580b94edb4d1e66505f47d02b`; it requires upstream base `e3d989e4b977da51829ba006952c2c764c1f980f`.
 
-**Deployment remains blocked on live workflow qualification, fresh identity/backup B, approved encrypted off-host capacity, controller qualification and the remaining approval-record fields.** This Mac repeatedly reached ENOSPC and cannot currently satisfy the backup-space gate. Do not stop the production writer until destination capacity is verified.
+**At that historical checkpoint deployment remained blocked on live workflow qualification, fresh identity/backup B, approved encrypted off-host capacity, controller qualification and the remaining approval-record fields.** The current Portainer procedure above supersedes the generic-controller requirement. This Mac repeatedly reached ENOSPC and cannot currently satisfy the backup-space gate. Do not stop the production writer until destination capacity is verified.
 A full copied install starts schedules immediately, with no supported quiet-serve option. Do not enable broad private egress to obtain Geotorget/Rakazo acceptance. A separately approved constrained integration path is required; the two stopped computers remain untouched.
 Cancellation during input transfer remains unproven. The client-IP warning, generic script-termination logs and baseline exporter Blob limit remain documented limitations.
 
@@ -123,26 +138,26 @@ The original planning task stopped at the document. The authorized preparation r
 
 ## Freeze the source and build an ARM production artifact
 
-- [ ] Use branch `experiment/beta40-upstream-first-20261111` and freeze application source at `74c4d0b49c565ba27d340db4901a3243e04059e4`, subject to the separate cancellation-pin decision.
+- [x] Use branch `experiment/beta40-upstream-first-20261111` and freeze application source at `9d19eb8480b3aba979ac527c38cfdc005dda709f`. Both runtime customizations are deferred.
       Later documentation, E2E and top-level operator-tool commits do not change that application/build revision. Preserve the canonical beta39 branch at `eadfc28`.
-- [ ] Record immutable upstream beta40 base `e3d989e4b977da51829ba006952c2c764c1f980f`.
-- [ ] Preserve that code revision in an approved remote release ref or a checksum-verified Git bundle before deployment.
+- [x] Record immutable upstream beta40 base `e3d989e4b977da51829ba006952c2c764c1f980f`.
+- [x] Preserve that code revision in an approved remote release ref or a checksum-verified Git bundle before deployment.
       Publication belongs to authorized release preparation. Do not push or merge `main`, or rebuild from a moving branch head.
-- [ ] Preserve the reviewed artifact as reference, not as the ARM deployment target.
+- [x] Preserve the reviewed artifact as reference, not as the ARM deployment target.
       Its tag is `registry.depot.dev/5884x6f4tn:2.0.0-beta.40-sandbox-org-skills-runtime-d22ca5ba0`.
       Its index is `sha256:ecd521e4cb96b6dfe639b67ae6f9bf7da48527be619f90880df9b50be2327ddf`.
       It contains the tested **amd64** image. Production was recorded as **arm64**.
-- [ ] Build the normal complete source image for ARM64, with this production identity.
-      Proposed if the cancellation pin remains: `2.0.0-beta.40-org-skills-cancel-74c4d0b4-arm64`.
+- [x] Build the normal complete source image for ARM64, with this production identity.
+      `2.0.0-beta.40-org-skills-9d19eb848-arm64`.
       Retagging cannot change the baked header or add an ARM manifest. Do not use emulation as the production qualification.
 
-Run this only during separately authorized release preparation, in an isolated export of the exact code revision.
+The build is complete. The block below is a historical rebuild recipe, not an instruction to rebuild the qualified digest. The executed command used a streamed Git archive and explicit native ARM build placement; see the release report and build receipt.
 Do not switch or modify the canonical checkout.
 
 ```bash
 set -euo pipefail
-CODE_REV=74c4d0b49c565ba27d340db4901a3243e04059e4
-BUILD=2.0.0-beta.40-org-skills-cancel-74c4d0b4-arm64
+CODE_REV=9d19eb8480b3aba979ac527c38cfdc005dda709f
+BUILD=2.0.0-beta.40-org-skills-9d19eb848-arm64
 RELEASE_CONTEXT=$(mktemp -d)
 git archive "$CODE_REV" | tar -x -C "$RELEASE_CONTEXT"
 depot build --project 5884x6f4tn --platform linux/arm64 \
@@ -155,40 +170,42 @@ depot build --project 5884x6f4tn --platform linux/arm64 \
   --save --save-tag "$BUILD" "$RELEASE_CONTEXT"
 ```
 
-- [ ] Read the final registry index back and record its index and ARM platform manifest digests.
+- [x] Read the final registry index back and record its index and ARM platform manifest digests.
       Verify source and version labels, ARM architecture, the baked header, and the selected workerd binary on ARM64.
       Pull with scoped private credentials and remove the credentials afterward. Do not move `latest`.
 - [ ] Keep the exact qualified image available through the maintenance and rollback window.
       Verify Depot retention or copy the index and every referenced manifest/blob to a durable approved repository.
       Verify the destination digest after any copy. Never assume a registry copy or rebuild preserves a digest.
-- [ ] Run actual ARM Linux containers on an operator-controlled, non-production runner.
+- [x] Run actual ARM Linux containers on an operator-controlled, non-production runner.
       The completed Depot runners and isolation receipts are recorded above. Record a new approved runner if further qualification is needed. Do not send production data or keys to the public Daytona review sandbox or a Depot build.
       If a private ARM runner is unavailable, stop qualification.
-- [ ] Run the named Docker migration/disconnect cases and normal upstream tool calls against the newly built artifact. No custom oversized-input success check is required.
+- [x] Run the four named Docker org-instruction migration cases and normal upstream tool calls against the newly built artifact. The custom native-disconnect requirement is deferred. No custom oversized-input success check is required.
       Record test titles, counts, image digests, logs, and build headers. Run only named scenarios.
       BuildKit `RUN` smoke tests and the verified gzip hashes alone do not establish ARM container acceptance.
-- [ ] Supply all three distinct ARM images required by the migration spec. The revised candidate has not been built.
-      The verified archived production ARM image supplied the baseline. The historical candidate and stock-control manifest digests are recorded above and in `.local/beta40-arm-followup/stock-arm-image.json`; only the baseline/stock controls remain reusable inputs for revised qualification.
+- [x] Supply all three distinct ARM images required by the migration spec. The revised candidate, historical baseline and pinned stock control were supplied to the passing run.
+      The verified archived production ARM image supplied the baseline. The current candidate digest is recorded above; the baseline and stock-control digests are recorded in the native QA report and earlier stock receipt.
       Synthetic migration fixtures used these images without accessing production. The amd64-only `10023ab...` baseline was not used.
-- [ ] Derive the expected ARM workerd binary SHA256 by decompressing the verified `linux-arm64` archive pinned in `workerd.json`.
-      Its gzip SHA256 is `f22cf953782ba645e45dbab96d5a1f9cf429389c8e7da840793448068db26ce9`.
+- [x] Derive the expected ARM workerd binary SHA256 by decompressing the verified `linux-arm64` archive pinned in `workerd.json`.
+      Its upstream gzip SHA256 is `b02c76c0425f32570eb114eea6a3cfce176b79710c8aaf6bc48c23b2d7f2b53f`.
       Record the derived raw hash, and match it against `/app/workerd` in the ARM candidate. Do not use the amd64 raw hash `129cc102...`.
 
 The Dockerfile has inherited floating system inputs, including apt repositories and a distroless tag.
 A new build is not byte-reproducible by assumption. Deploy the newly qualified immutable digest, never a later rebuild of its tag.
 Any application or trust-policy fix changes the source SHA, build identity, and qualification record before approval.
 
+Completed gates are evidenced by `.local/beta40-org-skills-release-20261112/report.md`, `registry-verification.json`, `source-bundle.json`, `smoke-results.json` and `migration-results.json`. The verified raw ARM workerd SHA256 is `dbadc8499a75750c312b3f8f9f7ca5c0980d85f18fdde065e57f93936c72c375`. Registry retention remains open.
+
 ## Approve what ships and what is deferred
 
-| Behavior                       | Production proposal                                                                                                                                                                                                               |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Organization MCP instructions  | Ship admin browser-session saves, strict revision CAS, 8192-unit limit, member reads, and request-scoped initialize/stateless discovery. Preserve the deployed table and `10_org_mcp_instructions` identity.                      |
-| Skill file and folder deletion | Ship the rebuilt dashboard flow. Confirm a fixed review, compare the selected subtree with a fresh read, preserve unrelated edits, and commit with an expected revision. Deletion does not deploy the whole working revision.     |
-| Large input                    | Use exact upstream beta40 input transport and limits. Custom chunking/streaming and oversized-input success requirements were removed at Vincent's request.                                                                       |
-| Cancellation                   | The separate Minoo7/workerd pin remains unchanged in source, pending a scope decision. Its benefit is demonstrated by synthetic disconnect tests, not a proven production-app dependency. Custom input-stream cleanup is removed. |
-| Saved accounts                 | Use upstream personal/shared creation and app-scope linking. Do not ship ownership conversion or the extra in-list sharing controls. Do not convert or delete stored accounts to match the UI.                                    |
-| Credential entry               | Use upstream exact multiline paste/drop and privacy controls. **Credential file upload is explicitly deferred for production.** The button is absent. Existing saved credentials remain.                                          |
-| Private HTTPS allowlist        | Keep upstream behavior and the current operator configuration, including the repaired Geotorget origin.                                                                                                                           |
+| Behavior                       | Production proposal                                                                                                                                                                                                           |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Organization MCP instructions  | Ship admin browser-session saves, strict revision CAS, 8192-unit limit, member reads, and request-scoped initialize/stateless discovery. Preserve the deployed table and `10_org_mcp_instructions` identity.                  |
+| Skill file and folder deletion | Ship the rebuilt dashboard flow. Confirm a fixed review, compare the selected subtree with a fresh read, preserve unrelated edits, and commit with an expected revision. Deletion does not deploy the whole working revision. |
+| Large input                    | Use exact upstream beta40 input transport and limits. Custom chunking/streaming and oversized-input success requirements were removed at Vincent's request.                                                                   |
+| Cancellation                   | Use upstream beta40 runtime and ordinary cancellation semantics. The custom workerd fork, associated native-disconnect guarantee/spec and input-stream cleanup are deferred.                                                  |
+| Saved accounts                 | Use upstream personal/shared creation and app-scope linking. Do not ship ownership conversion or the extra in-list sharing controls. Do not convert or delete stored accounts to match the UI.                                |
+| Credential entry               | Use upstream exact multiline paste/drop and privacy controls. **Credential file upload is explicitly deferred for production.** The button is absent. Existing saved credentials remain.                                      |
+| Private HTTPS allowlist        | Keep upstream behavior and the current operator configuration, including the repaired Geotorget origin.                                                                                                                       |
 
 - [ ] Include the loss of the file-upload button and ownership-conversion controls in the deploy approval.
 - [ ] Verify existing account ownership, encrypted credential hashes, generation, grants, and app links on the retained-data rehearsal.
@@ -291,25 +308,25 @@ The amd64 and native ARM synthetic journeys passed. The native ARM follow-up als
 
 Before activation approval, provide Vincent all of these values. Missing values block deployment.
 
-| Field                                          | Required value or current state                                                                                                                                                                                                                                     |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Application source                             | Current 74c4d0b49c565ba27d340db4901a3243e04059e4 on experiment/beta40-upstream-first-20261111; separate cancellation-pin decision remains.                                                                                                                          |
-| Production build header                        | No revised image built. Proposed if pin remains: 2.0.0-beta.40-org-skills-cancel-74c4d0b4-arm64.                                                                                                                                                                    |
-| Production index and ARM manifest digests      | NOT BUILT for revised source. Earlier d22 images contain the withdrawn transport and cannot satisfy the current release scope.                                                                                                                                      |
-| Synthetic ARM baseline and stock ARM controls  | Archived exact ARM baseline and stock ARM control supplied; see the follow-up result and image receipts.                                                                                                                                                            |
-| Exact production baseline archive              | Existing off-host `1f921aad...` OCI index, ARM manifest, config and revision verified. No new production snapshot captured.                                                                                                                                         |
-| ARM workerd binary hash                        | Raw ARM hash `7634ac29...` derived and matched to image-layer contents. The native runtime also returned the exact baked header during this rehearsal.                                                                                                              |
-| Private ARM runner and receipts                | Both private native ARM Depot runners finished; copies and credential files removed. Follow-up offline gates passed.                                                                                                                                                |
-| Fresh identity and required baseline workflows | **Not inspected in this planning task**                                                                                                                                                                                                                             |
-| Snapshot A and private rehearsal               | Historical repaired archive rehearsed privately on ARM. No fresh snapshot A or backup B captured; live workflow gates remain. Cold restoration and row-level controls passed.                                                                                       |
-| Better Auth DDL and locking review             | Historical snapshot plan compiled through the real adapter: zero auth DDL, warnings/problems or unsafe changes. No DDL locks to time for that plan. Recheck backup B; unexpected SQL requires review. Self-host startup does not use the Cloud job timeout wrapper. |
-| Durable image repository and retention         | Depot retention unconfirmed. Complete verified OCI archive preserved locally; validate registry availability or an approved durable copy before activation.                                                                                                         |
-| Snapshot destinations and space                | **Open capacity gate**. Mac hit ENOSPC. Name and verify adequate encrypted off-host storage and free-space reserve before any production stop.                                                                                                                      |
-| Verifier authentication                        | Record authorized actor/resource/scopes and validity through the window plus 30 minutes for recovery. If TTL is opaque, require a successful validity probe and an operator available to renew it. Do not send email codes or broaden grants.                       |
-| Dependency controls and fixture                | Per-workflow controls remain required. The custom large-input fixture is withdrawn. Any destructive skill fixture needs separately approved visibility and cleanup.                                                                                                 |
-| Risks accepted or fixed                        | Each item in the risk table below                                                                                                                                                                                                                                   |
-| Maintenance budget                             | Proposed 30-minute window, not a measured downtime estimate. Include off-host transfer and a 10-minute acceptance window.                                                                                                                                           |
-| Exact scripts/controller                       | Stage new beta40 scripts, syntax-check and exercise them on the private rehearsal before approval. No old beta39 log-grep controller.                                                                                                                               |
+| Field                                          | Required value or current state                                                                                                                                                                                                                                                        |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application source                             | Frozen 9d19eb8480b3aba979ac527c38cfdc005dda709f on experiment/beta40-upstream-first-20261111; only org instructions and safe deletion product deltas remain.                                                                                                                           |
+| Production build header                        | 2.0.0-beta.40-org-skills-9d19eb848-arm64; baked into the new ARM image and returned by native smoke.                                                                                                                                                                                   |
+| Production index and ARM manifest digests      | sha256:6bd69c2c64941d40821952511c6e829b1805a22e71ce5ae09b68fdac35c8da54 / sha256:287961b0a921d232580677b63637e81067bffce38c84522ea573d12c41e37f7f. Native synthetic acceptance passed; no deploy approval.                                                                             |
+| Synthetic ARM baseline and stock ARM controls  | Archived exact ARM baseline and stock ARM control supplied; see the follow-up result and image receipts.                                                                                                                                                                               |
+| Exact production baseline archive              | Existing off-host `1f921aad...` OCI index, ARM manifest, config and revision verified. No new production snapshot captured.                                                                                                                                                            |
+| ARM workerd binary hash                        | Replaced the custom fork with upstream caf569c512. New native image binary matched the verified upstream archive; raw SHA256 dbadc8499a75750c312b3f8f9f7ca5c0980d85f18fdde065e57f93936c72c375.                                                                                         |
+| Private ARM runner and receipts                | Historical private-copy runners finished and copies/credentials were removed. New synthetic-only ARM runner 3fnxt7jbkvg9wb3 also finished with files removed; all four current-image migration journeys passed.                                                                        |
+| Fresh identity and required baseline workflows | **Not inspected in this planning task**                                                                                                                                                                                                                                                |
+| Snapshot A and private rehearsal               | Historical repaired archive rehearsed privately on ARM. No fresh snapshot A or backup B captured; live workflow gates remain. Cold restoration and row-level controls passed.                                                                                                          |
+| Better Auth DDL and locking review             | Historical snapshot plan compiled through the real adapter: zero auth DDL, warnings/problems or unsafe changes. No DDL locks to time for that plan. Recheck backup B; unexpected SQL requires review. Self-host startup does not use the Cloud job timeout wrapper.                    |
+| Durable image repository and retention         | Depot retention unconfirmed. Complete verified OCI archive preserved locally; validate registry availability or an approved durable copy before activation.                                                                                                                            |
+| Snapshot destinations and space                | **Open capacity gate**. Mac hit ENOSPC. Name and verify adequate encrypted off-host storage and free-space reserve before any production stop.                                                                                                                                         |
+| Verifier authentication                        | Record authorized actor/resource/scopes and validity through the window plus 30 minutes for recovery. If TTL is opaque, require a successful validity probe and an operator available to renew it. Do not send email codes or broaden grants.                                          |
+| Dependency controls and fixture                | Per-workflow controls remain required. The custom large-input fixture is withdrawn. Any destructive skill fixture needs separately approved visibility and cleanup.                                                                                                                    |
+| Risks accepted or fixed                        | Each item in the risk table below                                                                                                                                                                                                                                                      |
+| Maintenance budget                             | Proposed 30-minute window, not a measured downtime estimate. Include off-host transfer and a 10-minute acceptance window.                                                                                                                                                              |
+| Exact update/recovery procedure                | Use the Portainer-owned stack. Finalize the short update and full-data-restore steps from captured stack identity. Old generic-controller design below is reference only; requested automatic recovery still needs a narrow qualified script or explicit supervised-recovery decision. |
 
 Do not use the amd64 review digest as a fallback when the production digest is missing.
 
@@ -332,7 +349,7 @@ umask 077
 test "$PROD_INDEX_DIGEST" != sha256:ecd521e4cb96b6dfe639b67ae6f9bf7da48527be619f90880df9b50be2327ddf
 test "$PROD_INDEX_DIGEST" != sha256:6f46c01d5ba32ae7b1464c3715c7becbc3add49f4bd2f7423d89da3fbc26dba7
 BACKUP_PHASE=B
-RUN_ID="beta40-74c4d0b4-$(date -u +%Y%m%dT%H%M%SZ)"
+RUN_ID="beta40-9d19eb848-$(date -u +%Y%m%dT%H%M%SZ)"
 STAGE_DIR="/opt/executor/upgrades/$RUN_ID"
 BACKUP_DIR="/opt/executor/backups/$RUN_ID"
 PROJECT_DIR=/root/executor-skill-delete-20261104
@@ -341,7 +358,7 @@ COMPOSE_PROJECT=executor
 SERVICE=executor
 DATA_VOLUME=executor_executor-v2-data
 IMAGE="$PROD_IMAGE_REPOSITORY@$PROD_INDEX_DIGEST"
-BUILD=2.0.0-beta.40-org-skills-cancel-74c4d0b4-arm64
+BUILD=2.0.0-beta.40-org-skills-9d19eb848-arm64
 ROLLBACK_IMAGE="executor-rollback:$RUN_ID-1677c7860"
 REVIEWED_COMPOSE_SHA=b590fc08bb714b46e10424a01fb38731aca756fcca91817cf715a0e5209405e9
 ```
@@ -400,14 +417,14 @@ gzip -t "$BACKUP_DIR/image-before.tar.gz"
 
 - [ ] Install the reviewed scripts and their recorded hashes in this root-owned stage.
       Require the no-writer verifier to accept `DATA_DIR` and inspect writable handles/mappings.
-      Only then atomically point `/opt/executor/upgrades/beta40-74c4d0b4.current` at this B stage.
+      Only then atomically point `/opt/executor/upgrades/beta40-9d19eb848.current` at this B stage.
       Record its physical path and run ID in the operator receipt. A must never create that pointer or contain `rollback.sh`.
 - [ ] Suspend only the confirmed Executor watchdog. Leave an already disabled update timer unchanged.
 - [ ] Stop only Executor, then archive. A failed `docker ps` must fail the assignment, not masquerade as an empty writer list.
 
 ```bash
 set -euo pipefail
-source /opt/executor/upgrades/beta40-74c4d0b4.current/recovery.env
+source /opt/executor/upgrades/beta40-9d19eb848.current/recovery.env
 test "$BACKUP_PHASE" = B
 docker stop --time 30 "$CONTAINER"
 writers=$(docker ps -q --filter "volume=$DATA_VOLUME")
@@ -443,7 +460,7 @@ On the authorized operator workstation, use the exact B run ID from the host rec
 set -euo pipefail
 umask 077
 : "${RUN_ID:?Use the exact B run ID from the host receipt}"
-[[ "$RUN_ID" =~ ^beta40-74c4d0b4-[0-9]{8}T[0-9]{6}Z$ ]]
+[[ "$RUN_ID" =~ ^beta40-9d19eb848-[0-9]{8}T[0-9]{6}Z$ ]]
 OFFHOST_DIR="/Users/minoo/.executor-upgrade-backups/$RUN_ID"
 mkdir -m 700 -p "$OFFHOST_DIR"
 rsync -a --no-owner --no-group --rsync-path='sudo -n rsync' \
@@ -483,35 +500,16 @@ Three named real CLI scenarios passed locally with Docker CLI 28.3.3 and Compose
 The inactive-profile shared-anchor probe initially reproduced an unsafe preparation. Adding `--profile '*'` to the semantic proof made it refuse the neighbour change. The environment fixture now requires its secret variable, so missing project `.env` context fails instead of comparing two empty values.
 These CLI checks do not qualify Linux installation, atomic live replacement, backup/off-host handoff, the ARMED controller or any workflow verifier. Those remain separate gates. Receipts and first harness failures are in `.local/beta40-controller-design/`. Release workflow triggers and POSIX/Python prerequisites could not be checked because this checkout lacks `.github/`; no CI execution claim is made.
 
-## Activate only Executor
+## Activate only Executor through Portainer
 
-- [ ] Stage a byte-preserving candidate Compose file that changes only `services.executor.image` to the approved digest.
-      The repaired private-origin entry, all other env, volumes, network mode, ports, and other services must remain identical.
-      The recorded baseline has no manual `EXECUTOR_BUILD_VERSION` override; the old misleading header is baked into its image.
-      If a new override is discovered, stop and review its removal explicitly. The candidate uses its baked honest header.
-- [ ] Compare resolved Compose objects using the original `--project-directory` and environment for both files.
-      Require exactly the reviewed image delta. Do not reserialize or reformat other service definitions.
-- [ ] Check the live Compose checksum again against the captured/reviewed bytes immediately before installing the candidate atomically.
-      No concurrent stack edits are allowed. Keep the original file in backup B.
-- [ ] The qualified activation script must prepare candidate bytes from the saved original, replacing exactly one plain image scalar matching `OLD_IMAGE_REF` with `IMAGE`.
-      Refuse ambiguous YAML or multiple matches. Compare resolved JSON and require only `services.executor.image` to differ.
-      Keep every other byte unchanged, including other services. Preserve file ownership/mode on a same-directory temporary file, recheck the live checksum, then atomically rename it over the Compose file.
-      The separate candidate preparer above implements byte generation and semantic proof only. Atomic live installation and backup-B/controller guards remain unimplemented; this activation recipe is still a specification.
-- [ ] Before changing Compose or starting the candidate, require backup phase B and a matching approved run ID, verified local/off-host manifests, and the approved digest.
-      Write an activation receipt containing that run ID, backup-manifest hash, candidate digest and activation time.
-      Persist controller state `ARMED` with a deadline no later than the approved window end or 15 minutes after activation, whichever comes first.
-      A command failure after this receipt must enter the classifier, never blindly resume the old engine against candidate-written data.
-- [ ] Run only the following service recreation after the guarded installer succeeds. This block is an excerpt, not the complete activation script. Resolve the new container ID immediately afterward.
+The previous host-file installer and direct `docker compose up` recipe are superseded and must not be executed. Activation and image reversion belong to the existing Portainer stack. This section is a pending procedure, not an executable installer.
 
-```bash
-set -euo pipefail
-source /opt/executor/upgrades/beta40-74c4d0b4.current/recovery.env
-docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
-  -f "$COMPOSE_FILE" up -d --no-deps --pull never --force-recreate "$SERVICE"
-CONTAINER=$(docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
-  -f "$COMPOSE_FILE" ps -q "$SERVICE")
-test -n "$CONTAINER"
-```
+- [ ] Capture the current Portainer endpoint, stack ID, source mode and complete configuration read-only. Confirm the production identity and preserve its env, volume, ports and all other services.
+- [ ] Prepare the Executor-image-only update in the stack's existing source of truth. Use its Git source if Git-backed, or its Portainer stack definition otherwise. Require both the text diff and resolved configuration to preserve every unrelated setting. Do not enable automatic updates or migrate stack ownership.
+- [ ] Recheck the captured stack/config identity immediately before submission. Require the approved immutable digest and verified local/off-host backup B manifests bound to the approved run ID.
+- [ ] Finalize and qualify the exact Portainer update request before deployment approval. It must update only Executor and preserve sidecars. Do not substitute a host Compose write or direct service recreation.
+- [ ] Record activation time, stack/config identity, run ID, backup-manifest hash and candidate digest. Resolve the resulting Executor container ID afresh.
+- [ ] Satisfy the requested bounded automatic data-rollback rule with a narrow reviewed procedure, or obtain an explicit decision to use supervised recovery instead. No general deployment controller is required by upstream self-hosting.
 
 ## Verify the candidate and classify failures
 
@@ -559,54 +557,23 @@ A hard failure observed within the armed window requests rollback immediately. O
 A failed rollback stops automation and leaves the incident with the operator. Never restore repeatedly or start the old engine on partially restored data.
 Controller terminal outcomes are `40 ROLLED_BACK_VERIFIED` and `50 ROLLBACK_FAILED`; verifier outcomes remain 0, 20 and 30. The historical beta39 controller used different meanings and must not be reused.
 
-## Restore the exact old image and fresh backup B
+## Restore the exact old image and fresh backup B through Portainer
 
 The future staged command is `sudo bash /opt/executor/upgrades/<B-RUN-ID>/rollback.sh --run-id <B-RUN-ID>`.
 Use the physical stage path recorded in the activation receipt, never infer it from a stale `.current` pointer.
 The script must compare its independently supplied run ID with `recovery.env` and the activation receipt, require `BACKUP_PHASE=B`, and verify the manifest hash and candidate digest.
 Automatic invocation also requires `ARMED` state and an unexpired deadline. Manual invocation after disarm requires a new explicit operator decision.
 Snapshot A has no rollback script. Do not reuse any beta39 rollback path or pre-Geotorget snapshot.
-The following body is an excerpt after those guards; it is not a ready-to-run recovery controller.
+The former direct Compose restore/recreate block is superseded and removed. The requirements below must be implemented in the reviewed Portainer-owned recovery procedure before activation. No ready-to-run rollback command exists yet.
 
 - [ ] Save candidate logs and failure receipts. Suspend only the audited Executor watchdog.
 - [ ] Resolve the current Executor container by Compose labels, not the pre-deploy ID. Stop and remove only that container.
 - [ ] Reverify backup B's checksums, the current local volume identity, and absence of all writers.
 - [ ] Require the confirmed ordinary local volume directory, not a separate mounted filesystem. Preserve failed data by a same-filesystem rename.
-- [ ] Restore the complete archive, ownership/mode, original Compose/config, and the exact saved image.
+- [ ] Restore the complete archive and ownership/mode, and restore the captured original stack/config and exact saved image through Portainer.
       Retag the saved image to the captured original Compose reference and forbid registry pulls.
 
-```bash
-set -euo pipefail
-source "$STAGE_DIR/recovery.env"
-(cd "$BACKUP_DIR" && sha256sum --check SHA256SUMS)
-CURRENT_CONTAINER=$(docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
-  -f "$COMPOSE_FILE" ps -aq "$SERVICE")
-test -n "$CURRENT_CONTAINER"
-docker stop --time 30 "$CURRENT_CONTAINER"
-docker rm "$CURRENT_CONTAINER"
-writers=$(docker ps -q --filter "volume=$DATA_VOLUME")
-test -z "$writers"
-test "$(docker volume inspect "$DATA_VOLUME" --format '{{.Mountpoint}}')" = "$DATA_DIR"
-test "$DATA_DIR" = /var/lib/docker/volumes/executor_executor-v2-data/_data
-test -d "$DATA_DIR" && test ! -L "$DATA_DIR"
-python3 "$STAGE_DIR/verify-no-writers.py" "$DATA_DIR"
-if mountpoint -q "$DATA_DIR"; then exit 1; fi
-docker load -i "$BACKUP_DIR/image-before.tar.gz"
-test "$(docker image inspect "$ROLLBACK_IMAGE" --format '{{.Id}}')" = "$OLD_IMAGE_ID"
-docker tag "$ROLLBACK_IMAGE" "$OLD_IMAGE_REF"
-FAILED_DIR="${DATA_DIR}.candidate-$RUN_ID"
-test ! -e "$FAILED_DIR"
-mv "$DATA_DIR" "$FAILED_DIR"
-mkdir "$DATA_DIR"
-read -r DATA_UID DATA_GID DATA_MODE < "$BACKUP_DIR/data-before.mode"
-chown "$DATA_UID:$DATA_GID" "$DATA_DIR"
-chmod "$DATA_MODE" "$DATA_DIR"
-tar --numeric-owner --xattrs --acls -xzpf "$BACKUP_DIR/data-before.tar.gz" -C "$DATA_DIR"
-cp -p "$BACKUP_DIR/docker-compose.before.private.yml" "$COMPOSE_FILE"
-printf '%s  %s\n' "$REVIEWED_COMPOSE_SHA" "$COMPOSE_FILE" | sha256sum --check -
-docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
-  -f "$COMPOSE_FILE" up -d --no-deps --pull never --force-recreate "$SERVICE"
-```
+Full-volume restoration still requires all writers stopped, verified backup B checksums, exact volume/mount identity, and a non-symlink ordinary local data directory. Refuse a separate mountpoint. Preserve failed candidate data by same-filesystem rename before restoring the complete archive with numeric ownership, ACLs and extended attributes. Restore the recorded directory owner/mode. Verify the saved old image ID and retag it to its captured reference if needed. Revert the image through the captured Portainer source mode with pulls disabled or an equivalently verified local-image path. Recheck the original stack/config checksum and ensure only Executor is recreated. These are recovery requirements, not authorization to perform them.
 
 - [ ] Re-resolve the container and require the saved image ID and `1677c7860` source label, healthy startup, original header, login, and anonymous MCP 401.
 - [ ] Verify saved org instructions, Geotorget customer, natural registry schedule receipts, working files, and stopped computer states.
@@ -618,10 +585,10 @@ docker compose --project-directory "$PROJECT_DIR" -p "$COMPOSE_PROJECT" \
 
 | Risk                                        | Proposed disposition before deployment                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Review image is amd64-only                  | A new ARM artifact must be built and qualified from the revised source. Earlier ARM acceptance applies to the old d22 image only.                                                                                                                                                                                                                                                                                                           |
+| Review image is amd64-only                  | Closed for the rebuilt 9d19eb848 ARM artifact: native smoke and four synthetic migration scenarios passed. Fresh production/provider checks remain separate.                                                                                                                                                                                                                                                                                |
 | Production-state migrations                 | Must close. Private retained-data rehearsal and full restore passed; the historical auth plan is empty. Fresh backup B/off-host checksums and fresh schema review remain. Do not claim a current-production migration no-op.                                                                                                                                                                                                                |
 | Client-IP/Better Auth warning               | Conditional acceptance for this upgrade if baseline and candidate auth work without a regression. The native host overwrites `x-executor-client-ip` from its TCP peer, runtime auth consumes it, and schema setup uses different options. The exact warning source/bucketing needs diagnosis. Do not trust arbitrary forwarded headers, disable rate limits, or invent an env fix. A trust-policy fix needs a new reviewed source/artifact. |
-| Cancellation                                | The separate Minoo7/workerd pin remains unchanged in source, pending a scope decision. Its benefit is demonstrated by synthetic disconnect tests, not a proven production-app dependency. Custom input-stream cleanup is removed.                                                                                                                                                                                                           |
+| Cancellation                                | Use upstream beta40 runtime and ordinary cancellation semantics. The custom workerd fork, associated native-disconnect guarantee/spec and input-stream cleanup are deferred.                                                                                                                                                                                                                                                                |
 | Generic workerd termination/timeouts        | Accept observation with the attribution rule, not a clean-log promise. Investigate separately. Crashes, resource exhaustion, or attributable workflow failures still request rollback.                                                                                                                                                                                                                                                      |
 | Telemetry trace-export warning              | Recheck local collector/export health during qualification. Capture failures without changing the telemetry service. Obtain explicit acceptance if still unresolved.                                                                                                                                                                                                                                                                        |
 | Credential file upload absent               | Explicit production deferral. Upstream multiline paste/drop is the approved replacement. No saved secret is deleted.                                                                                                                                                                                                                                                                                                                        |
