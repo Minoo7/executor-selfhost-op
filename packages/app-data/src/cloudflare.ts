@@ -34,11 +34,7 @@ export const FacetInvocation = Schema.Struct({
    */
   app: Schema.NonEmptyString,
   identity: Schema.NonEmptyString,
-  // A rolling Cloud runner may still send text; every new runner sends a stream.
-  body: Schema.Union([
-    Schema.String,
-    Schema.declare((value): value is ReadableStream<Uint8Array> => value instanceof ReadableStream),
-  ]),
+  body: Schema.String,
   cacheNamespace: Schema.optionalKey(Schema.String),
   /**
    * The host API revision `cacheNamespace` belongs to, for an app that reads its host's API. The
@@ -184,7 +180,7 @@ const FacetEntrypoint = Schema.declare(
   ): value is {
     invoke: (
       id: string,
-      body: string | ReadableStream<Uint8Array>,
+      body: string,
       headers: Readonly<Record<string, string>>,
       elicitation: ((input: unknown) => Promise<unknown>) | null,
       workflows: ((input: unknown) => Promise<unknown>) | null,
@@ -716,12 +712,6 @@ export const makeFacetSupervisor = (
           return enter(
             Effect.scoped(
               Effect.gen(function* () {
-                yield* Effect.addFinalizer(() =>
-                  Effect.promise(async () => {
-                    if (input?.body instanceof ReadableStream && !input.body.locked)
-                      await input.body.cancel().catch(() => undefined);
-                  }),
-                );
                 const invocation = yield* Schema.decodeUnknownEffect(
                   Schema.toType(FacetInvocation),
                 )(input).pipe(Effect.mapError(failed));

@@ -59,7 +59,6 @@ import {
   describeBuildCause,
   RuntimeAppsDependencyMissing,
   RuntimeBuildFailed,
-  RuntimeProtocolFailed,
   RuntimeProtocolUnsupported,
 } from "../contracts/runtime.ts";
 import {
@@ -344,37 +343,10 @@ class AppApi extends RpcTarget {
       ),
     );
   }
-  async invoke(
-    head: string,
-    length: number,
-    callbacks: RpcStub<AppHostCallbacks>,
-  ): Promise<string> {
+  async invoke(value: string, callbacks: RpcStub<AppHostCallbacks>): Promise<string> {
     return this.#run(
       runnerReply(
-        Effect.tryPromise({
-          try: async (signal) => {
-            if (
-              !Number.isSafeInteger(length) ||
-              length < 0 ||
-              typeof head !== "string" ||
-              head.length > length
-            )
-              throw new Error("Invalid invocation input length");
-            const chunks = [head];
-            let offset = head.length;
-            while (offset < length) {
-              signal.throwIfAborted();
-              const chunk = await callbacks.input(offset);
-              if (typeof chunk !== "string" || chunk.length === 0 || chunk.length > length - offset)
-                throw new Error("Invalid invocation input chunk");
-              chunks.push(chunk);
-              offset += chunk.length;
-            }
-            return chunks.join("");
-          },
-          catch: () => new RuntimeProtocolFailed(),
-        }).pipe(
-          Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(WorkerInvocation))),
+        Schema.decodeUnknownEffect(Schema.fromJsonString(WorkerInvocation))(value).pipe(
           Effect.flatMap(({ elicitation, workflowControls, ...invocation }) =>
             runner(this.#env, this.#context).invoke(invocation, {
               load: async () =>

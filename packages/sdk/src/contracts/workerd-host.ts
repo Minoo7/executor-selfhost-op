@@ -46,7 +46,6 @@ export const WorkerInvocation = Schema.Struct({
 export type WorkerInvocation = typeof WorkerInvocation.Type;
 /** Only these capabilities cross from a live app invocation back to the product. */
 export interface AppHostCallbacks extends RpcTarget {
-  input(offset: number): Promise<string>;
   elicit(input: string): Promise<string>;
   control(input: string): Promise<string>;
   /** The invocation's encoded build, read only when the runner cold-starts its Worker. */
@@ -91,7 +90,7 @@ export const CompileWorkerResult = Schema.Union([
 export interface WorkerdAppApi {
   cancel(): Promise<void>;
   compile(input: string): Promise<string>;
-  invoke(head: string, length: number, callbacks: AppHostCallbacks): Promise<string>;
+  invoke(input: string, callbacks: AppHostCallbacks): Promise<string>;
 }
 /** Background runs use finite host requests; no step callback or Promise lives in Node. */
 export const WorkflowHostCommand = Schema.Union([

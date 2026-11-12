@@ -57,7 +57,7 @@ export const AppRpcInvocation = Schema.declare(
 );
 interface AppRpcEntrypoint {
   start(
-    body: ReadableStream<Uint8Array>,
+    body: string,
     headers: Readonly<Record<string, string>>,
     elicitation: ReturnType<typeof invocationElicitation> | null,
     workflow?: import("apps/contracts").WorkflowRpc | null,

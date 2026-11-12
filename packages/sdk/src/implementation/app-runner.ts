@@ -9,7 +9,6 @@
  * the Worker Loader's cold-start callback, so a warm call reads and transfers no code. Every
  * request and reply passes through the adapter of the protocol the build's framework speaks.
  */
-import { invocationBody } from "./invocation-body.ts";
 import type { Fetcher, WorkerLoader } from "@cloudflare/workers-types";
 import { Clock, Context, Effect, Exit, Option, Redacted, Result, Schema, Semaphore } from "effect";
 import {
@@ -623,7 +622,7 @@ export const makeAppRunner = (host: AppRunnerHost) => {
           Effect.tryPromise({
             try: () =>
               entry.start(
-                invocationBody(options.body),
+                options.body,
                 options.headers,
                 delivery,
                 workflow,
@@ -744,7 +743,7 @@ export const makeAppRunner = (host: AppRunnerHost) => {
             identity,
             cacheNamespace: appCacheNamespace(invocation.build, invocation.hostApi),
             ...(invocation.hostApi === undefined ? {} : { hostApi: invocation.hostApi }),
-            body: invocationBody(body),
+            body,
             headers: invocation.headers,
             write:
               writeOperations.has(command.operation) ||
