@@ -1,7 +1,6 @@
 # Executor production stack
 
-After migration, Portainer will deploy this Compose file from
-`Minoo7/executor-selfhost-op`, branch
+Portainer deploys this Compose file from `Minoo7/executor-selfhost-op`, branch
 `deploy/executor-production`, on the existing cluster endpoint. Git owns the
 Compose configuration. Portainer owns deployments and environment inputs.
 Automatic updates and webhooks stay disabled.
@@ -28,11 +27,12 @@ container names, loopback port and ingress labels. Do not request a new auth key
 
 ## Initial migration
 
-The existing editor stack is not Git-backed. Portainer 2.45.1 cannot attach a
-Git workflow to it in place. The supported migration removes its containers and
-recreates the same `executor` stack from this repository. This interrupts
-Executor, its Tailscale sidecar and telemetry. It does not require changing the
-application image or migrating its database.
+The production migration completed on 13 November 2026. The following steps
+are retained as migration/reinstall reference, not pending work. Portainer
+2.45.1 cannot attach Git to an editor-managed stack in place. Its supported
+migration recreates the same `executor` stack from this repository. That
+interrupts Executor, its Tailscale sidecar and telemetry. It does not require
+changing the application image or migrating its database.
 
 Before teardown, obtain approval for the interruption and these container
 replacements. Back up the saved stack/environment and telemetry configuration.

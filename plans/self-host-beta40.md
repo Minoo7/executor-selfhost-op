@@ -5,6 +5,12 @@ The original plan granted no production permissions. The release-preparation aut
 The target is the upstream-first beta40 code reviewed in the isolated sandbox.
 Do not run the historical beta39 controller. Its broad log gate caused an unnecessary rollback.
 
+## Git-backed Portainer management, 13 November
+
+The approved migration completed. Production is now Git-backed Portainer stack28 on endpoint3, workflow3/source3, using `deploy/executor-production` and `deploy/production/compose.yaml` at Git commit `be033924bf9690453a3bf36399167655db434774`. The application image, volumes, runtime environment, keys and app repositories are unchanged. Manual deployments remain in place. This supersedes the earlier editor-managed stack1 identity and procedure references below.
+
+Fresh stopped-writer backups covered both data and Tailscale state, with verified off-host copies. Tailscale identity, shared network, unrelated containers and tsdproxy are preserved. Health/login/anonymous401, authenticated settings, Geotorget and natural Rakazo checks passed. See [the completed migration record](portainer-git-migration-20261113.md) for checksums, verification and recovery limits. Do not reuse operational scripts that hard-code stack1.
+
 ## Current production result, 12 November
 
 Vincent authorized the editor-managed Portainer repair and beta40 upgrade with “u do it”. Stack `1`, endpoint `3`, on ARM64 `cluster` now pins `registry.depot.dev/5884x6f4tn@sha256:6bd69c2c64941d40821952511c6e829b1805a22e71ce5ae09b68fdac35c8da54`. The public build header is `2.0.0-beta.40-org-skills-9d19eb848-arm64`. App source remains frozen at `9d19eb8480b3aba979ac527c38cfdc005dda709f`. Portainer remains editor-managed, without Git or automatic updates.
