@@ -7,7 +7,7 @@ Do not run the historical beta39 controller. Its broad log gate caused an unnece
 
 ## Git-backed Portainer management, 13 November
 
-The approved migration completed. Production is now Git-backed Portainer stack28 on endpoint3, workflow3/source3, using `deploy/executor-production` and `deploy/production/compose.yaml` at Git commit `be033924bf9690453a3bf36399167655db434774`. The application image, volumes, runtime environment, keys and app repositories are unchanged. Manual deployments remain in place. This supersedes the earlier editor-managed stack1 identity and procedure references below.
+The approved migration completed. Production is now Git-backed Portainer stack28 on endpoint3, workflow3/source3, using `main` (renamed from `deploy/executor-production`) and `deploy/production/compose.yaml` at Git commit `be033924bf9690453a3bf36399167655db434774`. The application image, volumes, runtime environment, keys and app repositories are unchanged. Manual deployments remain in place. This supersedes the earlier editor-managed stack1 identity and procedure references below.
 
 Fresh stopped-writer backups covered both data and Tailscale state, with verified off-host copies. Tailscale identity, shared network, unrelated containers and tsdproxy are preserved. Health/login/anonymous401, authenticated settings, Geotorget and natural Rakazo checks passed. See [the completed migration record](portainer-git-migration-20261113.md) for checksums, verification and recovery limits. Do not reuse operational scripts that hard-code stack1.
 

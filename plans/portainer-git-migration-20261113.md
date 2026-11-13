@@ -5,13 +5,17 @@ Completed and verified on 13 November 2026 after Vincent approved the one-time m
 ## Deployment source
 
 - Repository: `https://github.com/Minoo7/executor-selfhost-op`.
-- Branch: `deploy/executor-production`.
+- Branch: `main` (renamed from `deploy/executor-production` on 13 November).
 - File: `deploy/production/compose.yaml`.
 - Deployed Git commit: `be033924bf9690453a3bf36399167655db434774`.
 - Compose SHA256: `2066310faeffccbfa7ae17fa455b63105b1957cbd39a09579275e3a282a7758e`.
 - Current Portainer stack: `28` (`executor`), endpoint `3`, workflow `3`, source `3`.
 - Image index: `sha256:6bd69c2c64941d40821952511c6e829b1805a22e71ce5ae09b68fdac35c8da54`.
 - Application build: `2.0.0-beta.40-org-skills-9d19eb848-arm64`.
+
+The old default branch is preserved as `legacy/main-pre-beta40`. The branch
+rename and Portainer Git-reference update changed no running container, image
+or environment. The deployed configuration commit remains the one recorded above.
 
 Portainer AutoUpdate is null. No webhook or polling interval was configured. Git owns Compose edits; deployment remains manual through Portainer. The private origin allowlist stays in Portainer's environment inputs. Later documentation-only branch commits do not change the image or Compose content and are not automatically deployed.
 

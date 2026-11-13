@@ -1,6 +1,6 @@
 # Repository branches
 
-`deploy/executor-production` is the default branch and the source of the
+`main` is the default branch and the source of the
 Git-backed Portainer deployment configuration. It contains our upstream-first
 beta40 code and the two retained product additions, organization-wide MCP
 instructions and safe dashboard skill deletion.
@@ -13,14 +13,16 @@ See [production operations](../deploy/production/README.md).
 
 ## Current and historical branches
 
-The status labels below document deployment intent. They do not rename or
-rewrite Git refs. Historical branches and their commits are retained so prior
-release evidence, links and open pull requests continue to work.
+The production branch was renamed from `deploy/executor-production` to `main`
+on 13 November 2026. The former `main` is retained as
+`legacy/main-pre-beta40`. Portainer follows `refs/heads/main` without an app
+redeployment. The table records each branch's purpose. Historical commits,
+release evidence, links and open pull requests are preserved.
 
 | Branch                                 | Status   | Purpose                                                                                                                                                                       |
 | -------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `deploy/executor-production`           | CURRENT  | Production configuration and upstream-first beta40 source.                                                                                                                    |
-| `main`                                 | LEGACY   | Previous default at `68f0df4`. Its build-stop and pending-deletion note is historical.                                                                                        |
+| `main`                                 | CURRENT  | Production configuration and upstream-first beta40 source.                                                                                                                    |
+| `legacy/main-pre-beta40`               | LEGACY   | Previous default at `68f0df4`. Its build-stop and pending-deletion note is historical.                                                                                        |
 | `upgrade/executor-beta39-20261110`     | LEGACY   | Beta39 port at `eadfc28`, superseded by the deployed beta40 approach.                                                                                                         |
 | `upgrade/executor-beta31-20261028`     | LEGACY   | Earlier upgrade and custom runtime history.                                                                                                                                   |
 | `build/org-instructions-f664b14bd`     | LEGACY   | Earlier organization-instructions build.                                                                                                                                      |

@@ -1,7 +1,7 @@
 # Executor production stack
 
 Portainer deploys this Compose file from `Minoo7/executor-selfhost-op`, branch
-`deploy/executor-production`, on the existing cluster endpoint. Git owns the
+`main`, on the existing cluster endpoint. Git owns the
 Compose configuration. Portainer owns deployments and environment inputs.
 Automatic updates and webhooks stay disabled.
 

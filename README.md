@@ -1,15 +1,15 @@
 # Executor
 
 This repository is active. Our production and default branch is
-[`deploy/executor-production`](https://github.com/Minoo7/executor-selfhost-op/tree/deploy/executor-production).
+[`main`](https://github.com/Minoo7/executor-selfhost-op/tree/main).
 It contains upstream beta40 plus organization-wide MCP instructions and safe
 skill file/folder deletion. Runtime, accounts and credential paste/drop follow
 upstream behavior.
 
 Production uses the pinned image in [the Portainer configuration](deploy/production/README.md).
 Deployments remain manual. See [the branch guide](docs/repository-branches.md)
-for retained legacy work. The old `main` branch and its shutdown/deletion note
-are historical; they do not describe the current repository or deployment.
+for retained legacy work. The `legacy/main-pre-beta40` branch and its
+shutdown/deletion note are historical; they do not describe the current repository or deployment.
 
 The upstream Executor overview follows.
 
