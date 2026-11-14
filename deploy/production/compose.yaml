@@ -26,7 +26,7 @@ services:
       tsdproxy.port.1: "443/https:4400/http"
     pull_policy: never
   executor:
-    image: registry.depot.dev/5884x6f4tn@sha256:6bd69c2c64941d40821952511c6e829b1805a22e71ce5ae09b68fdac35c8da54
+    image: registry.depot.dev/5884x6f4tn@sha256:eb61385f240512302f3d3a5e2e9c879485551ba8ff0696fc9c650a0384cdc5b3
     container_name: executor
     cpu_shares: 4096
     init: true
@@ -40,6 +40,7 @@ services:
       EXECUTOR_APP_UI_BASE_URL: https://apps.planasolutions.ai
       EXECUTOR_CATALOG_URL: https://catalog.executor.sh/index.json
       BETTER_AUTH_URL: https://executor.planasolutions.ai
+      EXECUTOR_PUBLIC_ORIGINS: https://executor.planasolutions.ai,https://executor-scape-egress.tailac7a97.ts.net
       EXECUTOR_URL_ALLOW_HTTP_ORIGINS: "${EXECUTOR_URL_ALLOW_HTTP_ORIGINS:?Set the production origin allowlist in Portainer}"
       EXECUTOR_APPS_ALLOW_PRIVATE_FETCH: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
