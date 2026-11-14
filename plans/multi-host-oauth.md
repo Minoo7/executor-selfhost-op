@@ -1,5 +1,36 @@
 # Serve OAuth and MCP on two configured hostnames
 
+## Final candidate
+
+Prepared and qualified, not deployed. The short procedure is [the deploy note](multi-host-oauth-deploy.md).
+
+- Release source `4a2e8bc9ee75fb9f8d5798d8c1afc01229e1f122`.
+- ARM64 tag `registry.depot.dev/5884x6f4tn:2.0.0-beta.40-org-skills-multihost-4a2e8bc9e-arm64`.
+- Index digest `sha256:eb61385f240512302f3d3a5e2e9c879485551ba8ff0696fc9c650a0384cdc5b3`.
+- ARM64 manifest `sha256:d66fd2b1c6d776b3c6b5bf941bb2b4ad9483575a55e27397161aac3e6f60d1f2`.
+- Depot build `2nrcswl09l`.
+
+Eight focused source E2Es passed after the revocation fix, with full repository checks.
+The final digest passed the corrected native ARM64 image scenario in one invocation.
+It asserted the exact baked header, both authorization-server discovery paths and
+host-specific authorization, token, registration, revocation and introspection endpoints,
+protected-resource metadata, MCP challenges, unknown-host fallback, forbidden browser
+Origin, alternate-host login, and Secure, HttpOnly, host-only cookies.
+
+The owned ARM runner `87vdrc4q4ck31gm` finished and its staging files were removed.
+Final receipts are under `.local/multi-host-oauth-20261114/final/`.
+An OCI archive preserves all 31 referenced blobs. Its SHA-256 is
+`43cc05ecf48a71a2defdd70164e0b6bc6c2fd0a8734fb6dc340d16af22afda7f`.
+Depot retention remains unconfirmed, so the archive is retained as a separate recovery artifact.
+
+Focused independent Codex review found no blockers in the revocation fix.
+Explicit invalid-hint, unknown-token, and invalid-client revocation assertions remain
+coverage gaps, although the guard leaves those paths to the pinned provider as reviewed.
+Full device approval, dual-host API-token issuance, and an upgraded customized scoped
+connection have not each received their own two-host E2E journey. No Cloud target ran.
+External HTTPS, DNS, Grok Bot OAuth acceptance, and production workflows require a later
+approved deployment check. This task made no production changes.
+
 ## Scope and baseline
 
 Build from deployed application source `9d19eb8480b3aba979ac527c38cfdc005dda709f` on branch `feat/multi-host-oauth-20261114`.
@@ -60,9 +91,9 @@ Use synthetic fixtures only. The repository's referenced `notes/` directory is a
 
 ## Deployment note
 
-Pending implementation and qualification. No deployment is part of this task.
+The qualified candidate and exact image are recorded above. No deployment is part of this task.
 Keep `BETTER_AUTH_URL=https://executor.planasolutions.ai` and the existing persistent volume, secret, encryption configuration, ports, and ingress.
-The new allowlist variable, exact candidate digest, observed checks, and rollback instructions will be recorded after qualification.
+The short deploy note contains the allowlist, candidate digest, expected behavior and rollback instructions.
 
 ### Prepared configuration for a later approved deployment
 
