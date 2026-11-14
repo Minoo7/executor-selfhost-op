@@ -77,23 +77,32 @@ it.live("released image selects allowlisted OAuth hosts and secure browser cooki
         expect(yield* json(health, Schema.Struct({ status: Schema.String }))).toEqual({
           status: "ok",
         });
-        const metadataResponse = yield* request(host, "/.well-known/oauth-authorization-server");
-        expect(metadataResponse.status).toBe(200);
-        const metadata = yield* json(
-          metadataResponse,
-          Schema.Struct({
-            issuer: Schema.String,
-            authorization_endpoint: Schema.String,
-            token_endpoint: Schema.String,
-            registration_endpoint: Schema.String,
-          }),
-        );
-        expect(metadata).toEqual({
-          issuer: `${selected}/api/auth`,
-          authorization_endpoint: `${selected}/api/auth/oauth2/authorize`,
-          token_endpoint: `${selected}/api/auth/oauth2/token`,
-          registration_endpoint: `${selected}/api/auth/oauth2/register`,
-        });
+        for (const path of [
+          "/.well-known/oauth-authorization-server",
+          "/.well-known/oauth-authorization-server/api/auth",
+        ]) {
+          const metadataResponse = yield* request(host, path);
+          expect(metadataResponse.status).toBe(200);
+          const metadata = yield* json(
+            metadataResponse,
+            Schema.Struct({
+              issuer: Schema.String,
+              authorization_endpoint: Schema.String,
+              token_endpoint: Schema.String,
+              registration_endpoint: Schema.String,
+              revocation_endpoint: Schema.String,
+              introspection_endpoint: Schema.String,
+            }),
+          );
+          expect(metadata).toEqual({
+            issuer: `${selected}/api/auth`,
+            authorization_endpoint: `${selected}/api/auth/oauth2/authorize`,
+            token_endpoint: `${selected}/api/auth/oauth2/token`,
+            registration_endpoint: `${selected}/api/auth/oauth2/register`,
+            revocation_endpoint: `${selected}/api/auth/oauth2/revoke`,
+            introspection_endpoint: `${selected}/api/auth/oauth2/introspect`,
+          });
+        }
         const resource = yield* request(host, "/.well-known/oauth-protected-resource/mcp");
         expect(resource.status).toBe(200);
         expect(
