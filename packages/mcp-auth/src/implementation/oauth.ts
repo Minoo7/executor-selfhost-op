@@ -18,6 +18,7 @@ import {
   isAPIError,
 } from "better-auth/api";
 import { Clock, Effect, Option, Schema } from "effect";
+import { stripAccessTokenAuthorizationScheme } from "better-auth/oauth2";
 import { authCall, parse, runAuth } from "./auth-call.ts";
 import { deviceAuthorizationPlugin, devicePollsPerRequest } from "./device-authorization.ts";
 import {
@@ -1472,6 +1473,44 @@ export const grantOAuthPlugins = (settings: GrantOAuthOptions) => {
     },
     hooks: {
       before: [
+        {
+          matcher: (ctx: { path?: string }) =>
+            settings.isolateResources === true && ctx.path === "/oauth2/revoke",
+          handler: createAuthMiddleware((ctx) =>
+            runAuth(
+              Effect.gen(function* () {
+                const input = Schema.decodeUnknownOption(
+                  Schema.Struct({
+                    token: Schema.String,
+                    token_type_hint: Schema.optionalKey(Schema.Unknown),
+                  }),
+                )(ctx.body);
+                if (Option.isNone(input) || input.value.token_type_hint === "refresh_token") return;
+                const hash = yield* authCall(async () =>
+                  getOAuthProviderApi(ctx, options).hashToken(
+                    stripAccessTokenAuthorizationScheme(input.value.token),
+                    "access_token",
+                  ),
+                );
+                const stored = yield* authCall(() =>
+                  ctx.context.adapter.findOne({
+                    model: "oauthAccessToken",
+                    where: [{ field: "token", value: hash }],
+                  }),
+                );
+                if (stored === null) return;
+                const row = yield* parse(
+                  Schema.Struct({ resources: Schema.NullOr(Schema.Array(Schema.String)) }),
+                  stored,
+                );
+                if (grantTarget(resourceOrigins, row.resources ?? []) === undefined)
+                  return yield* Effect.fail(
+                    new APIError("BAD_REQUEST", { error: "invalid_target" }),
+                  );
+              }),
+            ),
+          ),
+        },
         {
           // Bind a request without `resource` before Better Auth signs and stores it, so consent,
           // the authorization code and its tokens all carry the same single audience.

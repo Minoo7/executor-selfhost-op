@@ -146,11 +146,45 @@ The named scenario failed because foreign code exchange returned 200 instead of 
 The mutation was restored. Evidence and commands are in
 `.local/multi-host-oauth-20261114/implementation-handoff.md`.
 
-Image build, registry identity, synthetic image acceptance and actual endpoint access
-remain the parent's work. Local source qualification is not artifact or production acceptance.
+This initial source qualification did not prove artifact or production acceptance.
+Later qualification and review resolutions are recorded below.
 
 The comment and complexity review identified live header-iterator mutation and repeated
 SSO discovery. Header deletion now uses a fixed key snapshot. SSO discovery runs once
 before constructing the fixed instances. Four obsolete or internal-wiring comment blocks
 were removed. The named multi-host scenario and full repository check passed after these
 fixes. The source run is `.local/e2e/2026-11-14T15-48-18.832Z-self-host-a97251/`.
+
+## Review resolutions and final source qualification
+
+The first ARM timeout had no retained JSON report. The second retained a 180-second
+test timeout. Instrumentation later showed the image became healthy, but `it.effect`
+froze the test clock before the fixture's existing startup retry could run. The release
+scenario now uses `it.live`, like neighboring Docker scenarios. Its HTTP request helper
+also sends the supplied browser Origin and cancels requests with the driver signal.
+The corrected scenario passed on the diagnostic `29eff6351` image in 4.24 seconds.
+That image is superseded by the rebuilt revocation-fix candidate.
+
+Functional review found wrong-host access-token revocation could delete an issuing
+host's token because the provider shares access-token hashes. The selected-resource
+guard now checks the stored audience before the provider can revoke a known opaque
+access token. It uses the public provider hash API and public authorization-scheme
+parser. Unknown tokens retain the provider's handling. No hashing, schema, or provider
+patch changed.
+
+The expanded source E2E failed against the unfixed code with a wrong-host revoke
+returning 200 instead of 400. With the guard, both directions reject foreign revocation
+with and without a token-type hint, including a Bearer-prefixed token. Original-host
+MCP calls still work. Own-host revocation returns 200 and subsequent MCP calls return 401.
+All eight named regression scenarios passed after this fix. Full repository checks
+also passed. Evidence is `.local/e2e/2026-11-14T16-19-07.977Z-self-host-79aee6/` and
+`.local/multi-host-oauth-20261114/e2e-revoke-negative.log`.
+
+Vincent approved retaining upstream shared refresh-family invalidation. These are
+two origin-specific OAuth entry points into one installation, not isolated user or
+client databases. A reused client ID and user retain one global refresh family.
+Replay detection or revoking an already-revoked refresh token can invalidate that
+family on both origins. This is an explicit exception to origin-specific credential
+lookup and audience validation. Separately registered clients have separate families.
+The existing refresh replay regression scenarios passed. A dedicated same-client,
+two-origin family-invalidation journey has not been run.

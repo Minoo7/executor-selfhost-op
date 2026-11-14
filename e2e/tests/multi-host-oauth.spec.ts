@@ -234,6 +234,19 @@ layer(HostedLive, { excludeTestServices: true })("Multiple OAuth origins", (it) 
           const refreshed = yield* token(origin, refresh);
           expect(refreshed.status).toBe(200);
           let current = yield* json(refreshed, Tokens);
+          const revoke = (host: string, hint?: string) =>
+            request(host, "/api/auth/oauth2/revoke", {
+              method: "POST",
+              headers: { "content-type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({
+                token: hint === undefined ? `Bearer ${current.access_token}` : current.access_token,
+                client_id: client.client_id,
+                client_secret: client.client_secret,
+                ...(hint === undefined ? {} : { token_type_hint: hint }),
+              }).toString(),
+            });
+          expect((yield* revoke(foreign, "access_token")).status).toBe(400);
+          expect((yield* revoke(foreign)).status).toBe(400);
           const introspect = (host: string) =>
             request(host, "/api/auth/oauth2/introspect", {
               method: "POST",
@@ -341,6 +354,7 @@ layer(HostedLive, { excludeTestServices: true })("Multiple OAuth origins", (it) 
               expect(response.status).toBe(200);
               current = yield* json(response, Tokens);
             }),
+            revoke: Effect.suspend(() => revoke(origin, "access_token")),
             clearSession: () => {
               session = null;
             },
@@ -378,7 +392,7 @@ layer(HostedLive, { excludeTestServices: true })("Multiple OAuth origins", (it) 
         expect(browserCookies).toContain("alternate.localhost");
         expect(browserCookies).toContain("127.0.0.1");
         yield* serverControl("restart");
-        for (const { origin, mcp, clearSession } of grants) {
+        for (const { origin, mcp, clearSession, revoke } of grants) {
           clearSession();
           expect(
             (yield* mcp(origin, "initialize", 4, {
@@ -388,6 +402,8 @@ layer(HostedLive, { excludeTestServices: true })("Multiple OAuth origins", (it) 
             })).status,
           ).toBe(200);
           expect((yield* mcp(origin, "tools/list", 5)).status).toBe(200);
+          expect((yield* revoke).status).toBe(200);
+          expect((yield* mcp(origin, "tools/list", 6)).status).toBe(401);
         }
         for (const invalid of [
           `${canonical},${canonical}`,

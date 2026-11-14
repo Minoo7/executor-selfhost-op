@@ -200,6 +200,11 @@ Forwarding headers do not select an origin. Each origin has its own OAuth issuer
 authorization codes, refresh tokens and host-only browser cookies over the shared user database.
 Canonical credentials keep their existing hashes. Access tokens retain their existing storage
 hash and must name the selected origin's exact MCP or API audience.
+An access-token revocation request cannot revoke another origin's token.
+Client registrations and users are shared. Upstream refresh-family invalidation still
+covers the same client and user across both origins. Reuse detection or revocation of
+an already-revoked refresh token can therefore sign out both origins when they reuse
+one client ID. Register clients separately on each origin for independent client families.
 
 For example, keep `BETTER_AUTH_URL=https://executor.planasolutions.ai` and configure
 `EXECUTOR_PUBLIC_ORIGINS=https://executor.planasolutions.ai,https://executor-scape-egress.tailac7a97.ts.net`.
