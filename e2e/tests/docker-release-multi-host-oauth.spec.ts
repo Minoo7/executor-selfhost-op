@@ -5,7 +5,7 @@ import { request as httpRequest } from "node:http";
 import { releasedServerWithOrigins } from "../support/docker-release-server.ts";
 import { driver } from "../support/platform.ts";
 
-it.effect("released image selects allowlisted OAuth hosts and secure browser cookies", () =>
+it.live("released image selects allowlisted OAuth hosts and secure browser cookies", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const alternate = "https://alternate.executor.invalid";
@@ -21,15 +21,16 @@ it.effect("released image selects allowlisted OAuth hosts and secure browser coo
       ) =>
         driver(
           "released image HTTP request",
-          () =>
+          (signal) =>
             new Promise<Response>((resolve, reject) => {
               const req = httpRequest(
                 `http://127.0.0.1:${new URL(f.origin).port}${path}`,
                 {
+                  signal,
                   method: body === undefined ? "GET" : "POST",
                   headers: {
                     host: new URL(origin).host,
-                    origin,
+                    ...(browserOrigin === undefined ? {} : { origin: browserOrigin }),
                     "content-type": "application/json",
                     "x-forwarded-host": "spoofed.invalid",
                     "x-forwarded-proto": "https",
