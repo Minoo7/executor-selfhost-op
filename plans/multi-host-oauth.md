@@ -64,6 +64,38 @@ Pending implementation and qualification. No deployment is part of this task.
 Keep `BETTER_AUTH_URL=https://executor.planasolutions.ai` and the existing persistent volume, secret, encryption configuration, ports, and ingress.
 The new allowlist variable, exact candidate digest, observed checks, and rollback instructions will be recorded after qualification.
 
+### Prepared configuration for a later approved deployment
+
+Keep the canonical setting unchanged and add this value to the Executor container environment.
+
+```text
+EXECUTOR_PUBLIC_ORIGINS=https://executor.planasolutions.ai,https://executor-scape-egress.tailac7a97.ts.net
+```
+
+The Git-owned production Compose file currently has no mapping for this variable.
+Adding a Portainer stack variable alone does not pass it into the container.
+At deployment, add this mapping under `services.executor.environment` in the Git-owned Compose file.
+
+```yaml
+EXECUTOR_PUBLIC_ORIGINS: "${EXECUTOR_PUBLIC_ORIGINS:-https://executor.planasolutions.ai}"
+```
+
+Set the Portainer variable to the two-origin value above, and update only the Executor image digest through the existing Git-backed stack workflow.
+Do not add a manual `EXECUTOR_BUILD_VERSION` override.
+Preserve existing environment values, keys, volumes, ports, sidecar configuration, and ingress.
+Neither the Compose mapping nor the Portainer variable has been applied by this task.
+
+Each hostname advertises its own issuer and endpoints. Browser cookies remain host-only, so users sign in separately on the two names.
+Existing canonical OAuth clients retain their code and refresh-token hashing. Tailnet clients register and authorize through the tailnet hostname.
+An access token, code, refresh token, or device code from one hostname is refused by the other hostname.
+Unknown Host values use canonical metadata and canonical origin checks. Forwarding headers cannot select an origin.
+
+For rollback, restore the previous Git-owned Compose image digest and remove the new mapping and Portainer variable through Portainer's normal Git stack update.
+The previous digest is `registry.depot.dev/5884x6f4tn@sha256:6bd69c2c64941d40821952511c6e829b1805a22e71ce5ae09b68fdac35c8da54`.
+This feature adds OAuth resource rows without replacing existing rows and adds no schema migration.
+New tailnet OAuth grants will not work on the old image. Preserve the stopped-writer backup required by the production runbook before any future deployment.
+If later evidence requires a data restore, use that fresh deployment backup and the prior image together. No deployment backup or production restore was performed here.
+
 ## Implemented local policy
 
 `EXECUTOR_PUBLIC_ORIGINS` is a comma-separated exact-origin allowlist with

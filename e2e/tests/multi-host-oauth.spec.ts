@@ -182,11 +182,15 @@ layer(HostedLive, { excludeTestServices: true })("Multiple OAuth origins", (it) 
               headers: { cookie },
             })).status,
           ).toBe(400);
+          const signIn = yield* request(origin, `/api/auth/oauth2/authorize?${params}`);
+          expect(signIn.status).toBe(302);
+          expect(new URL(signIn.headers.get("location") ?? "", origin).origin).toBe(origin);
           const authorization = yield* request(origin, `/api/auth/oauth2/authorize?${params}`, {
             headers: { cookie },
           });
           expect(authorization.status).toBe(302);
           const location = new URL(authorization.headers.get("location") ?? "", origin);
+          expect(location.origin).toBe(origin);
           const consent = yield* request(origin, "/api/auth/oauth2/consent", {
             method: "POST",
             headers: {

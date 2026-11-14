@@ -13,7 +13,12 @@ it.effect("released image selects allowlisted OAuth hosts and secure browser coo
       const build = yield* Config.String("EXECUTOR_E2E_EXPECTED_BUILD").pipe(
         Config.withDefault(""),
       );
-      const request = (origin: string, path: string, body?: unknown) =>
+      const request = (
+        origin: string,
+        path: string,
+        body?: unknown,
+        browserOrigin = body === undefined ? undefined : origin,
+      ) =>
         driver(
           "released image HTTP request",
           () =>
@@ -105,6 +110,10 @@ it.effect("released image selects allowlisted OAuth hosts and secure browser coo
           `resource_metadata="${selected}/.well-known/oauth-protected-resource/mcp?elicitation_mode=model"`,
         );
       }
+      const unlistedBrowser = "https://unknown.executor.invalid";
+      expect((yield* request(unlistedBrowser, "/mcp", undefined, unlistedBrowser)).status).toBe(
+        403,
+      );
       const loginPage = yield* request(alternate, "/login");
       expect(loginPage.status).toBe(200);
       expect(yield* driver("read released login page", () => loginPage.text())).toContain("<html");
