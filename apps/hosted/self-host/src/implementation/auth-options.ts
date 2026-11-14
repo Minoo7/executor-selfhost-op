@@ -31,7 +31,6 @@ const Sso = Schema.Struct({
 export const selfHostAuthSettings = Effect.gen(function* () {
   const settings = yield* authSettings;
   const registry = yield* publicOrigins;
-  // Self-host serves its MCP and API resources and its issuer on its single browser origin.
   const base = {
     ...settings,
     publicOrigins: registry.origins,

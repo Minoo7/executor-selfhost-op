@@ -228,7 +228,6 @@ export const selfHostRouteMap = <DashboardE, DashboardR>(options: {
           Effect.provideService(Layer.CurrentMemoMap, yield* Layer.makeMemoMap),
           Effect.map((handler) => handler.pipe(Effect.provideService(ScheduleWakeup, wake))),
         );
-        // Server-rendered pages use this origin's in-process API dispatch.
         const handler = withHostPipeline(
           Effect.gen(function* () {
             const request = yield* HttpServerRequest.HttpServerRequest;
@@ -256,7 +255,8 @@ export const selfHostRouteMap = <DashboardE, DashboardR>(options: {
         if (variant.appHost(request.headers.host)) return yield* variant.handler;
         const headers = new Headers(request.headers);
         headers.set("host", new URL(origin).host);
-        for (const name of headers.keys())
+        const headerNames = [...headers.keys()];
+        for (const name of headerNames)
           if (name === "forwarded" || name.startsWith("x-forwarded-")) headers.delete(name);
         const url = new URL(request.url, origin);
         const selected = new URL(origin);

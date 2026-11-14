@@ -39,11 +39,13 @@ import { AuthDatabase } from "./contracts/database.ts";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 
 /** Initialize auth before listening; the database owns persistent users and sessions. */
-const fixedAuth = (settings: Effect.Success<typeof selfHostAuthSettings>) =>
+const fixedAuth = (
+  settings: Effect.Success<typeof selfHostAuthSettings>,
+  discovery: Effect.Success<ReturnType<typeof selfHostSsoDiscovery>>,
+) =>
   Effect.gen(function* () {
     const database = yield* AuthDatabase;
     const sql = yield* SqlClient.SqlClient;
-    const discovery = yield* selfHostSsoDiscovery(settings);
     const canonical = settings.publicOrigins[0] === settings.url;
     const base = selfHostAuthOptions(
       {
@@ -180,7 +182,8 @@ const fixedAuth = (settings: Effect.Success<typeof selfHostAuthSettings>) =>
       url.host = normalized.host;
       const web = new Request(url, incoming);
       web.headers.set("host", normalized.host);
-      for (const name of web.headers.keys())
+      const headerNames = [...web.headers.keys()];
+      for (const name of headerNames)
         if (name === "forwarded" || name.startsWith("x-forwarded-")) web.headers.delete(name);
       // The socket address is trusted. Never accept a client-supplied forwarding header.
       web.headers.delete("x-executor-client-ip");
@@ -218,20 +221,23 @@ const fixedAuth = (settings: Effect.Success<typeof selfHostAuthSettings>) =>
 export const selfHostAuth = Effect.gen(function* () {
   const settings = yield* selfHostAuthSettings;
   const registry = yield* publicOrigins;
+  const discovery = yield* selfHostSsoDiscovery(settings);
   const entries = yield* Effect.forEach(registry.origins, (origin) =>
-    fixedAuth({
-      ...settings,
-      url: origin,
-      issuer: `${origin}/api/auth`,
-      resourceOrigins: singleResourceOrigin(origin),
-    }),
+    fixedAuth(
+      {
+        ...settings,
+        url: origin,
+        issuer: `${origin}/api/auth`,
+        resourceOrigins: singleResourceOrigin(origin),
+      },
+      discovery,
+    ),
   );
   const canonical = entries.find((entry) => entry.origin === registry.canonical);
   if (canonical === undefined) return yield* new AuthenticationUnavailable();
   return { ...canonical, entries, selectOrigin: registry.select };
 });
 
-/** Fixed auth instances share one database and the canonical background lifecycle. */
 export class SelfHostAuth extends Context.Service<
   SelfHostAuth,
   Effect.Success<typeof selfHostAuth>

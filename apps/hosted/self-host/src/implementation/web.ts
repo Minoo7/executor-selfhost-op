@@ -44,7 +44,6 @@ const document = dashboardDocument({
   server: Effect.promise(() => import("@executor-js/hosted-self-host-web/server")).pipe(
     Effect.map((module) => module.default),
   ),
-  // Self-host serves its MCP and API resources on its single origin.
   context: (api) =>
     Effect.gen(function* () {
       const origins = yield* publicOrigins;

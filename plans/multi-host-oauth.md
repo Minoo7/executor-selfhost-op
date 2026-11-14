@@ -116,3 +116,9 @@ The mutation was restored. Evidence and commands are in
 
 Image build, registry identity, synthetic image acceptance and actual endpoint access
 remain the parent's work. Local source qualification is not artifact or production acceptance.
+
+The comment and complexity review identified live header-iterator mutation and repeated
+SSO discovery. Header deletion now uses a fixed key snapshot. SSO discovery runs once
+before constructing the fixed instances. Four obsolete or internal-wiring comment blocks
+were removed. The named multi-host scenario and full repository check passed after these
+fixes. The source run is `.local/e2e/2026-11-14T15-48-18.832Z-self-host-a97251/`.
