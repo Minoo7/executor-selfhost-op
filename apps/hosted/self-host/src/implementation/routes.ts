@@ -43,7 +43,13 @@ import { HttpApiBuilder } from "effect/http-api";
 import { appUiBaseUrl, catalogFeedUrl } from "../contracts/config.ts";
 import { type HostEgress } from "@executor-js/utils/url-policy";
 import { Config, Effect, Layer, Option } from "effect";
-import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http";
+import {
+  Headers as HttpHeaders,
+  HttpRouter,
+  HttpServer,
+  HttpServerRequest,
+  HttpServerResponse,
+} from "effect/http";
 import { withHostPipeline } from "@executor-js/dashboard-start/in-process";
 import { selfHostApi } from "./api.ts";
 import { selfHostMcp } from "../mcp.ts";
@@ -98,137 +104,170 @@ export const selfHostRouteMap = <DashboardE, DashboardR>(options: {
       Effect.provide(executorServices),
       Effect.forkScoped,
     );
-    // The account callback the executor's sign-ins send, so the document lists the same one.
-    const clientMetadata = yield* clientMetadataSetting({
-      origin: auth.origin,
-      oauthRedirectUri: Option.getOrUndefined((yield* authSettings).oauthRedirectUri),
-    });
-    const addresses = appAddresses(auth.origin, yield* appUiBaseUrl(auth.origin));
-    const appUi = hostedAppUi(addresses);
-    const mcp = yield* selfHostMcp.pipe(Effect.provide(HttpServer.layerServices));
-    const document = lazyHostedApiDocument(() => executorSelfHostApiDocument(auth.origin));
-    const api = selfHostApi(document).pipe(
-      Layer.provide(frameworkDocumentation(Effect.succeed(skills))),
-      HttpRouter.provideRequest(localSourceFormatter),
-      Layer.provide(appUi.dashboard),
-      HttpRouter.provideRequest(auth.appSessions),
-      HttpRouter.provideRequest(
-        catalogLive(
-          document.document,
-          egress,
-          clientMetadata,
-          auth.origin,
-          Option.getOrUndefined(yield* catalogFeedUrl),
-        ),
-      ),
-      Layer.provide(hostedMiddlewareLive),
-      // Organization middleware reads the product's removal tombstones when it is built.
-      Layer.provide(executorServices),
-      HttpRouter.provideRequest(executorServices),
-      Layer.provide(auth.identity),
-      Layer.provide(auth.apiIdentity),
-      Layer.provide(auth.mcpIdentity),
+    const variants = yield* Effect.forEach(auth.entries, (auth) =>
+      Effect.gen(function* () {
+        // The account callback the executor's sign-ins send, so the document lists the same one.
+        const clientMetadata = yield* clientMetadataSetting({
+          origin: auth.origin,
+          oauthRedirectUri: Option.getOrUndefined((yield* authSettings).oauthRedirectUri),
+        });
+        const addresses = appAddresses(auth.origin, yield* appUiBaseUrl(auth.origin));
+        const appUi = hostedAppUi(addresses);
+        const mcp = yield* selfHostMcp.pipe(Effect.provide(HttpServer.layerServices));
+        const document = lazyHostedApiDocument(() => executorSelfHostApiDocument(auth.origin));
+        const api = selfHostApi(document).pipe(
+          Layer.provide(frameworkDocumentation(Effect.succeed(skills))),
+          HttpRouter.provideRequest(localSourceFormatter),
+          Layer.provide(appUi.dashboard),
+          HttpRouter.provideRequest(auth.appSessions),
+          HttpRouter.provideRequest(
+            catalogLive(
+              document.document,
+              egress,
+              clientMetadata,
+              auth.origin,
+              Option.getOrUndefined(yield* catalogFeedUrl),
+            ),
+          ),
+          Layer.provide(hostedMiddlewareLive),
+          // Organization middleware reads the product's removal tombstones when it is built.
+          Layer.provide(executorServices),
+          HttpRouter.provideRequest(executorServices),
+          Layer.provide(auth.identity),
+          Layer.provide(auth.apiIdentity),
+          Layer.provide(auth.mcpIdentity),
+        );
+        const mcpRoutes = Layer.mergeAll(
+          HttpRouter.add("*", "/mcp", mcp.http),
+          HttpRouter.add("*", "/org/:organization/mcp", mcp.http),
+          HttpRouter.add("GET", "/.well-known/oauth-protected-resource", mcpProtectedResource),
+          HttpRouter.add("GET", "/.well-known/oauth-protected-resource/mcp", mcpProtectedResource),
+          HttpRouter.add("GET", "/.well-known/oauth-authorization-server", mcpAuthorizationServer),
+          HttpRouter.add(
+            "GET",
+            "/.well-known/oauth-authorization-server/api/auth",
+            mcpAuthorizationServer,
+          ),
+        ).pipe(
+          HttpRouter.provideRequest(executorServices),
+          HttpRouter.provideRequest(auth.mcpIdentity),
+        );
+        const authoring = gitRoutes.pipe(
+          HttpRouter.provideRequest(hostedAppGitAccess),
+          HttpRouter.provideRequest(executorServices),
+          Layer.provide(auth.identity),
+          Layer.provide(auth.apiIdentity),
+        );
+        const productRoutes = Layer.mergeAll(
+          publishedSkillRoutes(Effect.succeed(skills)),
+          authoring,
+          api,
+          browserTelemetry.pipe(HttpRouter.provideRequest(auth.identity)),
+          HttpRouter.add("*", "/api/webhooks/:appId/:subscriptionId", hostedWebhookCallback).pipe(
+            HttpRouter.provideRequest(executorServices),
+          ),
+          HttpRouter.add("*", "/api/auth/*", auth.handler),
+          HttpRouter.add("GET", "/api/oauth/callback", hostedOAuthCallback).pipe(
+            HttpRouter.provideRequest(auth.identity),
+          ),
+          HttpRouter.add(
+            "GET",
+            clientMetadataDocumentPath,
+            clientMetadataDocument(clientMetadata),
+          ).pipe(HttpRouter.provideRequest(auth.identity)),
+          mcpRoutes,
+          Layer.mergeAll(
+            HttpRouter.add("GET", "/api/mcp/approvals/:requestId", mcp.approvals),
+            HttpRouter.add("POST", "/api/mcp/approvals/:requestId", mcp.approvals),
+          ).pipe(
+            HttpRouter.provideRequest(auth.mcpIdentity),
+            HttpRouter.provideRequest(executorServices),
+          ),
+          Layer.mergeAll(
+            HttpRouter.add("GET", "/api", apiChallenge),
+            HttpRouter.add(
+              "GET",
+              "/.well-known/oauth-protected-resource/api",
+              apiProtectedResource,
+            ),
+          ).pipe(HttpRouter.provideRequest(auth.apiIdentity)),
+          // Resolved on the server so opening an app never renders an intermediate dashboard page.
+          HttpRouter.add("GET", "/app-auth", appUi.signIn(dashboard)).pipe(
+            HttpRouter.provideRequest(auth.appSessions),
+            HttpRouter.provideRequest(executorServices),
+            HttpRouter.provideRequest(auth.identity),
+          ),
+          HttpRouter.add("GET", "*", dashboard),
+        );
+        const notFound = HttpServerResponse.empty({ status: 404 });
+        const appServices = requestServices(Layer.mergeAll(auth.appSessions, executorServices));
+        const appRoutes = Layer.mergeAll(
+          HttpApiBuilder.layer(AppUiApi).pipe(
+            Layer.provide(appUi.calls),
+            Layer.provide(appUi.sessionAccess.combine(appServices).layer),
+          ),
+          HttpRouter.add("GET", appSignInCallbackPath, appUi.callback),
+          HttpRouter.add("GET", "/_executor/assets/:version/*", appUi.asset),
+          HttpRouter.add("GET", "/_executor/version", appUi.versions),
+          HttpRouter.add("POST", "/_executor/api/telemetry/traces", appUi.telemetry("traces")),
+          HttpRouter.add("POST", "/_executor/api/telemetry/logs", appUi.telemetry("logs")),
+          HttpRouter.add("GET", "/_executor/*", notFound),
+          HttpRouter.add("GET", "/api/*", notFound),
+          HttpRouter.add("GET", "/mcp/*", notFound),
+          HttpRouter.add("GET", "/.well-known/*", notFound),
+          HttpRouter.add("GET", "*", appUi.page),
+        ).pipe(
+          Layer.provide(appUi.originAccess.layer),
+          HttpRouter.provideRequest(auth.appSessions),
+          HttpRouter.provideRequest(executorServices),
+        );
+        const apps = yield* HttpRouter.toHttpEffect(appRoutes).pipe(
+          Effect.provideService(Layer.CurrentMemoMap, yield* Layer.makeMemoMap),
+        );
+        const product = yield* HttpRouter.toHttpEffect(productRoutes).pipe(
+          Effect.provideService(Layer.CurrentMemoMap, yield* Layer.makeMemoMap),
+          Effect.map((handler) => handler.pipe(Effect.provideService(ScheduleWakeup, wake))),
+        );
+        // Server-rendered pages use this origin's in-process API dispatch.
+        const handler = withHostPipeline(
+          Effect.gen(function* () {
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            if (Option.isSome(addresses.fromHost(request.headers.host)))
+              return yield* observed(apps.pipe(requestTiming));
+            if (addresses.ownsHost(request.headers.host)) return notFound;
+            return yield* observed(product);
+          }).pipe(recordRequestRejections),
+        );
+        return {
+          origin: auth.origin,
+          handler,
+          appHost: (host: string | undefined) => Option.isSome(addresses.fromHost(host)),
+        };
+      }),
     );
-    const mcpRoutes = Layer.mergeAll(
-      HttpRouter.add("*", "/mcp", mcp.http),
-      HttpRouter.add("*", "/org/:organization/mcp", mcp.http),
-      HttpRouter.add("GET", "/.well-known/oauth-protected-resource", mcpProtectedResource),
-      HttpRouter.add("GET", "/.well-known/oauth-protected-resource/mcp", mcpProtectedResource),
-      HttpRouter.add("GET", "/.well-known/oauth-authorization-server", mcpAuthorizationServer),
-      HttpRouter.add(
-        "GET",
-        "/.well-known/oauth-authorization-server/api/auth",
-        mcpAuthorizationServer,
-      ),
-    ).pipe(
-      HttpRouter.provideRequest(executorServices),
-      HttpRouter.provideRequest(auth.mcpIdentity),
-    );
-    const authoring = gitRoutes.pipe(
-      HttpRouter.provideRequest(hostedAppGitAccess),
-      HttpRouter.provideRequest(executorServices),
-      Layer.provide(auth.identity),
-      Layer.provide(auth.apiIdentity),
-    );
-    const productRoutes = Layer.mergeAll(
-      publishedSkillRoutes(Effect.succeed(skills)),
-      authoring,
-      api,
-      browserTelemetry.pipe(HttpRouter.provideRequest(auth.identity)),
-      HttpRouter.add("*", "/api/webhooks/:appId/:subscriptionId", hostedWebhookCallback).pipe(
-        HttpRouter.provideRequest(executorServices),
-      ),
-      HttpRouter.add("*", "/api/auth/*", auth.handler),
-      HttpRouter.add("GET", "/api/oauth/callback", hostedOAuthCallback).pipe(
-        HttpRouter.provideRequest(auth.identity),
-      ),
-      HttpRouter.add(
-        "GET",
-        clientMetadataDocumentPath,
-        clientMetadataDocument(clientMetadata),
-      ).pipe(HttpRouter.provideRequest(auth.identity)),
-      mcpRoutes,
-      Layer.mergeAll(
-        HttpRouter.add("GET", "/api/mcp/approvals/:requestId", mcp.approvals),
-        HttpRouter.add("POST", "/api/mcp/approvals/:requestId", mcp.approvals),
-      ).pipe(
-        HttpRouter.provideRequest(auth.mcpIdentity),
-        HttpRouter.provideRequest(executorServices),
-      ),
-      Layer.mergeAll(
-        HttpRouter.add("GET", "/api", apiChallenge),
-        HttpRouter.add("GET", "/.well-known/oauth-protected-resource/api", apiProtectedResource),
-      ).pipe(HttpRouter.provideRequest(auth.apiIdentity)),
-      // Resolved on the server so opening an app never renders an intermediate dashboard page.
-      HttpRouter.add("GET", "/app-auth", appUi.signIn(dashboard)).pipe(
-        HttpRouter.provideRequest(auth.appSessions),
-        HttpRouter.provideRequest(executorServices),
-        HttpRouter.provideRequest(auth.identity),
-      ),
-      HttpRouter.add("GET", "*", dashboard),
-    );
-    const notFound = HttpServerResponse.empty({ status: 404 });
-    const appServices = requestServices(Layer.mergeAll(auth.appSessions, executorServices));
-    const appRoutes = Layer.mergeAll(
-      HttpApiBuilder.layer(AppUiApi).pipe(
-        Layer.provide(appUi.calls),
-        Layer.provide(appUi.sessionAccess.combine(appServices).layer),
-      ),
-      HttpRouter.add("GET", appSignInCallbackPath, appUi.callback),
-      HttpRouter.add("GET", "/_executor/assets/:version/*", appUi.asset),
-      HttpRouter.add("GET", "/_executor/version", appUi.versions),
-      HttpRouter.add("POST", "/_executor/api/telemetry/traces", appUi.telemetry("traces")),
-      HttpRouter.add("POST", "/_executor/api/telemetry/logs", appUi.telemetry("logs")),
-      HttpRouter.add("GET", "/_executor/*", notFound),
-      HttpRouter.add("GET", "/api/*", notFound),
-      HttpRouter.add("GET", "/mcp/*", notFound),
-      HttpRouter.add("GET", "/.well-known/*", notFound),
-      HttpRouter.add("GET", "*", appUi.page),
-    ).pipe(
-      Layer.provide(appUi.originAccess.layer),
-      HttpRouter.provideRequest(auth.appSessions),
-      HttpRouter.provideRequest(executorServices),
-    );
-    const apps = yield* HttpRouter.toHttpEffect(appRoutes).pipe(
-      Effect.provideService(Layer.CurrentMemoMap, yield* Layer.makeMemoMap),
-    );
-    const product = yield* HttpRouter.toHttpEffect(productRoutes).pipe(
-      Effect.provideService(Layer.CurrentMemoMap, yield* Layer.makeMemoMap),
-      Effect.map((handler) => handler.pipe(Effect.provideService(ScheduleWakeup, wake))),
-    );
-    const routes = HttpRouter.add(
+    return HttpRouter.add(
       "*",
       "*",
-      // Server-rendered pages read the product API through this same dispatch, in-process.
-      withHostPipeline(
-        Effect.gen(function* () {
-          const request = yield* HttpServerRequest.HttpServerRequest;
-          if (Option.isSome(addresses.fromHost(request.headers.host)))
-            return yield* observed(apps.pipe(requestTiming));
-          if (addresses.ownsHost(request.headers.host)) return notFound;
-          return yield* observed(product);
-        }).pipe(recordRequestRejections),
-      ),
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const origin = auth.selectOrigin(request.headers.host);
+        const variant = variants.find((entry) => entry.origin === origin);
+        if (variant === undefined) return HttpServerResponse.empty({ status: 503 });
+        if (variant.appHost(request.headers.host)) return yield* variant.handler;
+        const headers = new Headers(request.headers);
+        headers.set("host", new URL(origin).host);
+        for (const name of headers.keys())
+          if (name === "forwarded" || name.startsWith("x-forwarded-")) headers.delete(name);
+        const url = new URL(request.url, origin);
+        const selected = new URL(origin);
+        url.protocol = selected.protocol;
+        url.host = selected.host;
+        return yield* variant.handler.pipe(
+          Effect.provideService(
+            HttpServerRequest.HttpServerRequest,
+            request.modify({ url: url.href, headers: HttpHeaders.fromInput(headers) }),
+          ),
+        );
+      }),
     );
-    return routes;
   });

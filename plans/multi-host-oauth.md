@@ -63,3 +63,56 @@ Use synthetic fixtures only. The repository's referenced `notes/` directory is a
 Pending implementation and qualification. No deployment is part of this task.
 Keep `BETTER_AUTH_URL=https://executor.planasolutions.ai` and the existing persistent volume, secret, encryption configuration, ports, and ingress.
 The new allowlist variable, exact candidate digest, observed checks, and rollback instructions will be recorded after qualification.
+
+## Implemented local policy
+
+`EXECUTOR_PUBLIC_ORIGINS` is a comma-separated exact-origin allowlist with
+`BETTER_AUTH_URL` first. An unset variable retains one canonical origin. Configured
+entries require HTTPS except HTTP localhost origins. Duplicate hosts, user information,
+wildcards, paths, queries, fragments and a different first origin fail startup.
+Host alone selects an instance. Unknown hosts use the canonical instance. Existing
+app-domain routing remains separate. Forwarding headers are removed before product dispatch.
+
+Each fixed instance supplies Authentication, McpAuthentication, ApiAuthentication,
+app-session services, metadata and dashboard document resource URLs for its selected origin.
+The existing database adapter and secret are shared. The canonical grant-expiry and
+scheduler lifecycles remain the only background owners. There is no schema change.
+
+Canonical token storage is unchanged. Alternate instances use the public provider
+`storeTokens.hash(token, type)` option. Access tokens use the provider's existing
+SHA-256 and unpadded base64url format. Every other token type hashes the JSON tuple
+`[issuer, type, token]`. Code lookup and replay cleanup therefore share the namespace,
+and refresh lookup occurs before rotation, replay or family revocation. Device
+verification identifiers use the alternate issuer as an HMAC input namespace.
+The default hash was checked against the installed provider 1.7.16 implementation.
+The implementation uses Web Crypto and Effect's public base64url encoder.
+No private dependency import or dependency patch was added.
+
+Selected-origin resource checks reject explicit foreign authorization resources.
+Consent and device approval retain exact grant-target checks. The provider does not
+configure a request_uri resolver and refuses request_uri at its supported boundary.
+The provider claim callback rejects foreign opaque-token resources during introspection,
+which the provider reports as inactive without an issuer. SQL MCP and API validators
+retain singleton selected-origin audience lists and their existing access-token hash.
+Resources for new connections are seeded at every configured origin. Startup inserts
+missing resources for existing non-revoked connections at each fixed instance's origin.
+Existing resource rows are never overwritten.
+
+## Local qualification
+
+The focused self-host run executed eight scenarios successfully. It covered the new
+multi-host scenario, both existing MCP refresh scenarios, OAuth discovery and revocation,
+live grant narrowing, organization MCP instructions, skill deletion, and private app bookmarks.
+The new scenario verifies PKCE code exchange and refresh on both hosts, cross-host
+rejection before consumption, MCP initialize and tools/list, concurrent refresh and
+listing, canonical credentials issued before enabling the allowlist, restart, browser
+sign-in cookies, selected-origin writes, spoofed forwarding, unknown Host fallback,
+device polling isolation, introspection, request_uri refusal and invalid startup settings.
+
+A temporary mutation replaced alternate issuer/type hash input with the raw token.
+The named scenario failed because foreign code exchange returned 200 instead of 400.
+The mutation was restored. Evidence and commands are in
+`.local/multi-host-oauth-20261114/implementation-handoff.md`.
+
+Image build, registry identity, synthetic image acceptance and actual endpoint access
+remain the parent's work. Local source qualification is not artifact or production acceptance.

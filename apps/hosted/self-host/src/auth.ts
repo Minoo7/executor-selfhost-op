@@ -5,13 +5,18 @@ import {
 } from "./implementation/auth-options.ts";
 import { selfHostRegistration, selfHostUserHooks } from "./implementation/registration.ts";
 /** Better Auth over the host's shared, persisted PGlite database. */
+import { publicOrigins } from "./implementation/public-origins.ts";
+import { ConnectionId } from "@executor-js/mcp-auth";
+import { Base64Url } from "effect/encoding";
 import { betterAuth } from "better-auth";
 import { HostedAppSessions, hostedAppSessions } from "@executor-js/hosted-server/app-ui";
 import {
+  singleResourceOrigin,
   McpAuthentication,
   mcpBrowserGrantError,
   mcpConnectionStore,
   provisionHostedOAuthResources,
+  provisionHostedConnectionResources,
   ApiAuthentication,
   apiBearerAccess,
   callerSpanAttributes,
@@ -28,142 +33,205 @@ import {
   authEndpointTemplates,
 } from "@executor-js/hosted-server";
 import { routeTemplates } from "@executor-js/telemetry";
-import { Context, Effect, Layer, Option, Redacted } from "effect";
+import { Context, Effect, Layer, Option, Redacted, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import { AuthDatabase } from "./contracts/database.ts";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 
 /** Initialize auth before listening; the database owns persistent users and sessions. */
-export const selfHostAuth = Effect.gen(function* () {
-  const settings = yield* selfHostAuthSettings;
-  const database = yield* AuthDatabase;
-  const sql = yield* SqlClient.SqlClient;
-  const discovery = yield* selfHostSsoDiscovery(settings);
-  const base = selfHostAuthOptions(settings, ["x-executor-client-ip"], discovery);
-  const options = {
-    ...base,
-    plugins: [...base.plugins, selfHostRegistration(settings)],
-    databaseHooks: selfHostUserHooks(settings),
-    database,
-    secret: Redacted.value(settings.secret),
-  };
-  const auth = betterAuth(options);
-  const context = yield* Effect.tryPromise({
-    try: () => auth.$context,
-    catch: () => new AuthenticationUnavailable(),
-  });
-  const origins = {
-    origin: settings.url,
-    resourceOrigins: settings.resourceOrigins,
-    issuer: settings.issuer,
-  };
-  yield* provisionHostedOAuthResources(origins, context).pipe(
-    Effect.mapError(() => new AuthenticationUnavailable()),
-  );
-  const identity = Layer.succeed(Authentication, {
-    ...origins,
-    oauthRedirectUri: Option.getOrUndefined(settings.oauthRedirectUri),
-    current: (headers) =>
-      Effect.tryPromise({
-        try: () =>
-          auth.api.getSession({
-            headers,
-            query: { disableRefresh: true, disableCookieCache: true },
-          }),
-        catch: () => new AuthenticationUnavailable(),
-      })
-        .pipe(Effect.flatMap(sessionPrincipal))
-        .pipe(Effect.withSpan("auth.current")),
-    organization: (reference) => resolveOrganizationReference(context.adapter, reference),
-    organizationSlug: (headers, organizationId) =>
-      lookupOrganizationSlug(() =>
-        auth.api.getOrganization({ headers, query: { organizationId } }),
-      ).pipe(Effect.withSpan("auth.organizationSlug")),
-    membership: (principal, organizationId) =>
-      lookupMembership(context.adapter, principal, organizationId).pipe(
-        Effect.withSpan("auth.membership"),
-      ),
-    removeOrganization: (organizationId) =>
-      deleteOrganizationRecords(context.adapter, organizationId).pipe(
-        Effect.withSpan("auth.removeOrganization"),
-      ),
-    removeUser: (user) =>
-      deleteUserRecords(context.adapter, user).pipe(Effect.withSpan("auth.removeUser")),
-  });
-  const mcpIdentity = Layer.succeed(McpAuthentication, {
-    ...origins,
-    authenticate: (headers, mode, organization) =>
-      mcpBearerAccess(origins, { headers, mode, organization }).pipe(
-        Effect.provideService(SqlClient.SqlClient, sql),
-        Effect.tap(({ access, userId }) =>
-          Effect.annotateCurrentSpan(callerSpanAttributes(access.organization, userId)),
-        ),
-        Effect.withSpan("auth.authenticate"),
-      ),
-    browserGrant: (headers, id) =>
-      Effect.tryPromise({
-        try: () => auth.api.getMcpBrowserAccess({ headers, body: { id } }),
-        catch: mcpBrowserGrantError,
-      }),
-    metadata: Effect.tryPromise({
-      try: () => auth.api.getOAuthServerConfig(),
-      catch: () => new AuthenticationUnavailable(),
-    }),
-    connections: mcpConnectionStore((run) =>
-      Effect.tryPromise({ try: () => run(auth.api), catch: (cause) => cause }),
-    ),
-  });
-  const apiIdentity = Layer.succeed(ApiAuthentication, {
-    ...origins,
-    authenticate: (headers, organization) =>
-      apiBearerAccess(origins, { headers, organization }).pipe(
-        Effect.provideService(SqlClient.SqlClient, sql),
-        Effect.tap(({ access, userId }) =>
-          Effect.annotateCurrentSpan(callerSpanAttributes(access.organization, userId)),
-        ),
-        Effect.withSpan("auth.authenticate"),
-      ),
-  });
-  const routes = routeTemplates(authEndpointTemplates(auth.api));
-  const handler = Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const incoming = yield* HttpServerRequest.toWeb(request);
-    yield* routes.record(new URL(incoming.url).pathname);
-    const web = new Request(incoming, { headers: new Headers(incoming.headers) });
-    // The socket address is trusted. Never accept a client-supplied forwarding header.
-    web.headers.delete("x-executor-client-ip");
-    if (Option.isSome(request.remoteAddress))
-      web.headers.set("x-executor-client-ip", request.remoteAddress.value);
-    const response = yield* Effect.tryPromise({
-      try: () => auth.handler(web),
+const fixedAuth = (settings: Effect.Success<typeof selfHostAuthSettings>) =>
+  Effect.gen(function* () {
+    const database = yield* AuthDatabase;
+    const sql = yield* SqlClient.SqlClient;
+    const discovery = yield* selfHostSsoDiscovery(settings);
+    const canonical = settings.publicOrigins[0] === settings.url;
+    const base = selfHostAuthOptions(
+      {
+        ...settings,
+        tokenPolicy: {
+          connectionOrigins: settings.publicOrigins,
+          isolateResources: true,
+          ...(canonical
+            ? {}
+            : {
+                deviceNamespace: settings.issuer,
+                // Provider defaults are SHA-256 in unpadded base64url. SQL keeps that access hash.
+                storeTokens: {
+                  hash: async (token: string, type: string) =>
+                    Base64Url.encode(
+                      new Uint8Array(
+                        await crypto.subtle.digest(
+                          "SHA-256",
+                          new TextEncoder().encode(
+                            type === "access_token"
+                              ? token
+                              : JSON.stringify([settings.issuer, type, token]),
+                          ),
+                        ),
+                      ),
+                    ),
+                },
+              }),
+        },
+      },
+      ["x-executor-client-ip"],
+      discovery,
+    );
+    const options = {
+      ...base,
+      plugins: [...base.plugins, selfHostRegistration(settings)],
+      databaseHooks: selfHostUserHooks(settings),
+      database,
+      secret: Redacted.value(settings.secret),
+    };
+    const auth = betterAuth(options);
+    const context = yield* Effect.tryPromise({
+      try: () => auth.$context,
       catch: () => new AuthenticationUnavailable(),
     });
-    return HttpServerResponse.fromWeb(response).pipe(
-      HttpServerResponse.setHeader("cache-control", "no-store"),
+    const origins = {
+      origin: settings.url,
+      resourceOrigins: settings.resourceOrigins,
+      issuer: settings.issuer,
+    };
+    yield* provisionHostedOAuthResources(origins, context).pipe(
+      Effect.mapError(() => new AuthenticationUnavailable()),
     );
-  }).pipe(
-    Effect.catchTag("AuthenticationUnavailable", () =>
-      Effect.succeed(HttpServerResponse.empty({ status: 503 })),
-    ),
+    const connections = yield* sql`select id from "mcpConnection" where revoked = false`.pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ id: ConnectionId })))),
+      Effect.mapError(() => new AuthenticationUnavailable()),
+    );
+    for (const connection of connections)
+      yield* provisionHostedConnectionResources(origins, context, connection.id).pipe(
+        Effect.mapError(() => new AuthenticationUnavailable()),
+      );
+    const identity = Layer.succeed(Authentication, {
+      ...origins,
+      oauthRedirectUri: Option.getOrUndefined(settings.oauthRedirectUri),
+      current: (headers) =>
+        Effect.tryPromise({
+          try: () =>
+            auth.api.getSession({
+              headers,
+              query: { disableRefresh: true, disableCookieCache: true },
+            }),
+          catch: () => new AuthenticationUnavailable(),
+        })
+          .pipe(Effect.flatMap(sessionPrincipal))
+          .pipe(Effect.withSpan("auth.current")),
+      organization: (reference) => resolveOrganizationReference(context.adapter, reference),
+      organizationSlug: (headers, organizationId) =>
+        lookupOrganizationSlug(() =>
+          auth.api.getOrganization({ headers, query: { organizationId } }),
+        ).pipe(Effect.withSpan("auth.organizationSlug")),
+      membership: (principal, organizationId) =>
+        lookupMembership(context.adapter, principal, organizationId).pipe(
+          Effect.withSpan("auth.membership"),
+        ),
+      removeOrganization: (organizationId) =>
+        deleteOrganizationRecords(context.adapter, organizationId).pipe(
+          Effect.withSpan("auth.removeOrganization"),
+        ),
+      removeUser: (user) =>
+        deleteUserRecords(context.adapter, user).pipe(Effect.withSpan("auth.removeUser")),
+    });
+    const mcpIdentity = Layer.succeed(McpAuthentication, {
+      ...origins,
+      authenticate: (headers, mode, organization) =>
+        mcpBearerAccess(origins, { headers, mode, organization }).pipe(
+          Effect.provideService(SqlClient.SqlClient, sql),
+          Effect.tap(({ access, userId }) =>
+            Effect.annotateCurrentSpan(callerSpanAttributes(access.organization, userId)),
+          ),
+          Effect.withSpan("auth.authenticate"),
+        ),
+      browserGrant: (headers, id) =>
+        Effect.tryPromise({
+          try: () => auth.api.getMcpBrowserAccess({ headers, body: { id } }),
+          catch: mcpBrowserGrantError,
+        }),
+      metadata: Effect.tryPromise({
+        try: () => auth.api.getOAuthServerConfig(),
+        catch: () => new AuthenticationUnavailable(),
+      }),
+      connections: mcpConnectionStore((run) =>
+        Effect.tryPromise({ try: () => run(auth.api), catch: (cause) => cause }),
+      ),
+    });
+    const apiIdentity = Layer.succeed(ApiAuthentication, {
+      ...origins,
+      authenticate: (headers, organization) =>
+        apiBearerAccess(origins, { headers, organization }).pipe(
+          Effect.provideService(SqlClient.SqlClient, sql),
+          Effect.tap(({ access, userId }) =>
+            Effect.annotateCurrentSpan(callerSpanAttributes(access.organization, userId)),
+          ),
+          Effect.withSpan("auth.authenticate"),
+        ),
+    });
+    const routes = routeTemplates(authEndpointTemplates(auth.api));
+    const handler = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const incoming = yield* HttpServerRequest.toWeb(request);
+      yield* routes.record(new URL(incoming.url).pathname);
+      const url = new URL(incoming.url);
+      const normalized = new URL(settings.url);
+      url.protocol = normalized.protocol;
+      url.host = normalized.host;
+      const web = new Request(url, incoming);
+      web.headers.set("host", normalized.host);
+      for (const name of web.headers.keys())
+        if (name === "forwarded" || name.startsWith("x-forwarded-")) web.headers.delete(name);
+      // The socket address is trusted. Never accept a client-supplied forwarding header.
+      web.headers.delete("x-executor-client-ip");
+      if (Option.isSome(request.remoteAddress))
+        web.headers.set("x-executor-client-ip", request.remoteAddress.value);
+      const response = yield* Effect.tryPromise({
+        try: () => auth.handler(web),
+        catch: () => new AuthenticationUnavailable(),
+      });
+      return HttpServerResponse.fromWeb(response).pipe(
+        HttpServerResponse.setHeader("cache-control", "no-store"),
+      );
+    }).pipe(
+      Effect.catchTag("AuthenticationUnavailable", () =>
+        Effect.succeed(HttpServerResponse.empty({ status: 503 })),
+      ),
+    );
+    const appSessions = Layer.succeed(
+      HostedAppSessions,
+      hostedAppSessions(context, globalThis.crypto),
+    );
+    return {
+      identity,
+      mcpIdentity,
+      apiIdentity,
+      appSessions,
+      agentGrants: grantExpiry((run) =>
+        Effect.tryPromise({ try: () => run(auth.api), catch: (cause) => cause }),
+      ),
+      origin: settings.url,
+      handler,
+    };
+  });
+
+export const selfHostAuth = Effect.gen(function* () {
+  const settings = yield* selfHostAuthSettings;
+  const registry = yield* publicOrigins;
+  const entries = yield* Effect.forEach(registry.origins, (origin) =>
+    fixedAuth({
+      ...settings,
+      url: origin,
+      issuer: `${origin}/api/auth`,
+      resourceOrigins: singleResourceOrigin(origin),
+    }),
   );
-  const appSessions = Layer.succeed(
-    HostedAppSessions,
-    hostedAppSessions(context, globalThis.crypto),
-  );
-  return {
-    identity,
-    mcpIdentity,
-    apiIdentity,
-    appSessions,
-    agentGrants: grantExpiry((run) =>
-      Effect.tryPromise({ try: () => run(auth.api), catch: (cause) => cause }),
-    ),
-    origin: settings.url,
-    handler,
-  };
+  const canonical = entries.find((entry) => entry.origin === registry.canonical);
+  if (canonical === undefined) return yield* new AuthenticationUnavailable();
+  return { ...canonical, entries, selectOrigin: registry.select };
 });
 
-/** The one auth instance, built before startup data steps and shared with the routes. */
+/** Fixed auth instances share one database and the canonical background lifecycle. */
 export class SelfHostAuth extends Context.Service<
   SelfHostAuth,
   Effect.Success<typeof selfHostAuth>

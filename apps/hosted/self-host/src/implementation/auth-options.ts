@@ -1,5 +1,6 @@
 /** Self-host credentials and optional operator-owned OpenID Connect configuration. */
 import { authOptions, authSettings, singleResourceOrigin } from "@executor-js/hosted-server";
+import { publicOrigins } from "./public-origins.ts";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { organization } from "better-auth/plugins/organization";
 import { Config, Effect, Option, Redacted, Schema } from "effect";
@@ -29,9 +30,11 @@ const Sso = Schema.Struct({
 /** SSO stays disabled unless explicitly configured; partial configuration fails startup. */
 export const selfHostAuthSettings = Effect.gen(function* () {
   const settings = yield* authSettings;
+  const registry = yield* publicOrigins;
   // Self-host serves its MCP and API resources and its issuer on its single browser origin.
   const base = {
     ...settings,
+    publicOrigins: registry.origins,
     resourceOrigins: singleResourceOrigin(settings.url),
     issuer: `${settings.url}/api/auth`,
   };
@@ -115,13 +118,16 @@ export const selfHostSsoDiscovery = (settings: Effect.Success<typeof selfHostAut
 
 /** Public registration is handled by the atomic setup/invitation endpoints. */
 export const selfHostAuthOptions = (
-  settings: Effect.Success<typeof selfHostAuthSettings>,
+  settings: Effect.Success<typeof selfHostAuthSettings> & {
+    readonly tokenPolicy?: NonNullable<Parameters<typeof authOptions>[0]["tokenPolicy"]>;
+  },
   ipAddressHeaders: string[],
   discovery: typeof SsoDiscovery.Type | null,
 ) => {
   const base = authOptions(settings, ipAddressHeaders);
   return {
     ...base,
+    trustedOrigins: [...settings.publicOrigins],
     emailAndPassword: { enabled: true, disableSignUp: true },
     plugins: [
       organization({ disableOrganizationDeletion: true, allowUserToCreateOrganization: false }),

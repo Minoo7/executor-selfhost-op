@@ -187,3 +187,20 @@ cache. The Compose commands above build from source and do not depend on the
 published container image. For the published installation, use
 `docker logs --tail 100 executor-v2` and `docker inspect executor-v2` to inspect
 startup and health.
+
+### Multiple public OAuth origins
+
+`EXECUTOR_PUBLIC_ORIGINS` optionally lists comma-separated exact public origins.
+Put `BETTER_AUTH_URL` first. With the variable unset, only `BETTER_AUTH_URL` is used.
+Configured origins require HTTPS, except HTTP localhost origins used for development.
+Duplicate hosts, wildcard entries, user information, paths, queries and fragments fail startup.
+
+The request's Host selects a configured origin. Unknown hosts use the canonical origin.
+Forwarding headers do not select an origin. Each origin has its own OAuth issuer,
+authorization codes, refresh tokens and host-only browser cookies over the shared user database.
+Canonical credentials keep their existing hashes. Access tokens retain their existing storage
+hash and must name the selected origin's exact MCP or API audience.
+
+For example, keep `BETTER_AUTH_URL=https://executor.planasolutions.ai` and configure
+`EXECUTOR_PUBLIC_ORIGINS=https://executor.planasolutions.ai,https://executor-scape-egress.tailac7a97.ts.net`.
+Both ingress routes must preserve the public Host header.

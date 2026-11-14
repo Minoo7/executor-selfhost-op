@@ -69,7 +69,12 @@ export type { RefreshRejection };
 export type GrantObservers = Pick<GrantOAuthOptions, "onRefreshRejected" | "onGrantCreated">;
 
 /** The hosted grant's origins plus the host's grant observers. */
-export type HostedOAuthOptions = HostedOAuthOrigins & GrantObservers;
+export type HostedOAuthOptions = HostedOAuthOrigins &
+  GrantObservers &
+  Pick<
+    GrantOAuthOptions,
+    "storeTokens" | "connectionOrigins" | "isolateResources" | "deviceNamespace"
+  >;
 
 const hostedGrantOAuth = ({
   origin,
@@ -77,8 +82,10 @@ const hostedGrantOAuth = ({
   issuer,
   onRefreshRejected,
   onGrantCreated,
+  ...policy
 }: HostedOAuthOptions) =>
   grantOAuthPlugins({
+    ...policy,
     origin,
     resourceOrigins,
     issuer,

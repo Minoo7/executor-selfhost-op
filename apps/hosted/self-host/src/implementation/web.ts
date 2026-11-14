@@ -4,7 +4,8 @@ import type { DocumentApi } from "@executor-js/dashboard-start/document-api";
 import { hostedDocumentContext } from "@executor-js/hosted-server/document";
 import { SignInSettings } from "@executor-js/hosted-self-host-web/document";
 import { singleResourceOrigin, type ResourceOrigins } from "@executor-js/mcp-auth/grants";
-import { Config, Effect, FileSystem, Path, Result, Schema } from "effect";
+import { publicOrigins } from "./public-origins.ts";
+import { Effect, FileSystem, Path, Result, Schema } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 
 /**
@@ -45,9 +46,13 @@ const document = dashboardDocument({
   ),
   // Self-host serves its MCP and API resources on its single origin.
   context: (api) =>
-    Config.String("BETTER_AUTH_URL").pipe(
-      Effect.flatMap((origin) => selfHostDocumentContext(singleResourceOrigin(origin))(api)),
-    ),
+    Effect.gen(function* () {
+      const origins = yield* publicOrigins;
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      return yield* selfHostDocumentContext(
+        singleResourceOrigin(origins.select(request.headers.host)),
+      )(api);
+    }),
 });
 
 /** Hashed build output never changes; everything else revalidates. */

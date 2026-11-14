@@ -90,6 +90,7 @@ const randomUserCode = () => {
 };
 
 export interface DeviceAuthorizationOptions {
+  readonly namespace?: string | undefined;
   /** The browser origin that serves the verification page. */
   readonly origin: string;
   /** The provider's options, as the token endpoint uses them. */
@@ -115,6 +116,8 @@ export interface DeviceAuthorizationOptions {
 }
 
 export const deviceAuthorizationPlugin = (settings: DeviceAuthorizationOptions) => {
+  const keyFor = (ctx: GenericEndpointContext, kind: "device" | "user", code: string) =>
+    codeKey(ctx, kind, settings.namespace === undefined ? code : `${settings.namespace}:${code}`);
   const find = (ctx: GenericEndpointContext, identifier: string) =>
     authCall(() => ctx.context.internalAdapter.findVerificationValue(identifier)).pipe(
       Effect.flatMap((row) =>
@@ -145,7 +148,7 @@ export const deviceAuthorizationPlugin = (settings: DeviceAuthorizationOptions) 
     Effect.gen(function* () {
       const code = normalizeUserCode(input);
       if (code === undefined) return Option.none();
-      const pointer = yield* find(ctx, userCodeIdentifier(yield* codeKey(ctx, "user", code)));
+      const pointer = yield* find(ctx, userCodeIdentifier(yield* keyFor(ctx, "user", code)));
       if (Option.isNone(pointer)) return Option.none();
       const found = yield* read(ctx, pointer.value.value);
       return Option.map(found, (found) => ({ ...found, key: pointer.value.value }));
@@ -220,7 +223,7 @@ export const deviceAuthorizationPlugin = (settings: DeviceAuthorizationOptions) 
         const { client } = yield* authCall(() =>
           Promise.resolve(provider.authenticateClient({ requireCredentials: false })),
         );
-        const key = yield* codeKey(ctx, "device", device_code);
+        const key = yield* keyFor(ctx, "device", device_code);
         const found = yield* read(ctx, key);
         if (Option.isNone(found) || found.value.request.clientId !== client.clientId)
           return yield* Effect.fail(oauthError("invalid_grant", "Unknown device code."));
@@ -323,8 +326,8 @@ export const deviceAuthorizationPlugin = (settings: DeviceAuthorizationOptions) 
               );
               const deviceCode = Base64Url.encode(crypto.getRandomValues(new Uint8Array(32)));
               const userCode = randomUserCode();
-              const key = yield* codeKey(ctx, "device", deviceCode);
-              const userKey = yield* codeKey(ctx, "user", userCode);
+              const key = yield* keyFor(ctx, "device", deviceCode);
+              const userKey = yield* keyFor(ctx, "user", userCode);
               const now = yield* Clock.currentTimeMillis;
               const expiresAt = now + requestSeconds * 1000;
               const value = yield* Schema.encodeEffect(StoredRequest)({

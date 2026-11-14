@@ -144,6 +144,10 @@ export interface CreatedGrant {
   readonly kind: "mcp" | "api";
 }
 export interface GrantOAuthOptions {
+  readonly storeTokens?: OAuthOptions<Scope[]>["storeTokens"];
+  readonly connectionOrigins?: ResourceOrigins["mcp"];
+  readonly isolateResources?: boolean;
+  readonly deviceNamespace?: string;
   /** The browser origin that serves sign-in and consent; same-origin checks compare against it. */
   readonly origin: string;
   /** Where the MCP and API resources that tokens are issued for are served. */
@@ -217,6 +221,7 @@ export const grantOAuthPlugins = (settings: GrantOAuthOptions) => {
   const { origin, resourceOrigins } = settings;
   const options = {
     issuer: settings.issuer,
+    ...(settings.storeTokens === undefined ? {} : { storeTokens: settings.storeTokens }),
     scopes: settings.scopes,
     resources: settings.resources,
     resourceSeedMode: "manual",
@@ -276,7 +281,11 @@ export const grantOAuthPlugins = (settings: GrantOAuthOptions) => {
           }),
         ),
     },
-    customAccessTokenClaims: ({ referenceId }) => ({ grant_id: referenceId }),
+    customAccessTokenClaims: ({ referenceId, resources }) => {
+      if (settings.isolateResources && grantTarget(resourceOrigins, resources ?? []) === undefined)
+        throw new APIError("BAD_REQUEST", { error: "invalid_target" });
+      return { grant_id: referenceId };
+    },
     // Connections add resources after clients register. Every resource here is an Executor
     // audience, and grants still bind each token to exactly one of them.
     enforcePerClientResources: false,
@@ -285,7 +294,7 @@ export const grantOAuthPlugins = (settings: GrantOAuthOptions) => {
   const seedConnectionResources = (context: OAuthResourceSeedContext, connection: ConnectionId) =>
     seedOAuthResources(context, {
       ...options,
-      resources: mcpOAuthResources(resourceOrigins.mcp, connection),
+      resources: mcpOAuthResources(settings.connectionOrigins ?? resourceOrigins.mcp, connection),
     });
   const get = (context: GenericEndpointContext, id: GrantId) =>
     authCall(() =>
@@ -1030,6 +1039,7 @@ export const grantOAuthPlugins = (settings: GrantOAuthOptions) => {
    * tokens resolve their grant and audience the same way.
    */
   const device = deviceAuthorizationPlugin({
+    namespace: settings.deviceNamespace,
     origin,
     provider: options,
     accepts: (resource) => grantTarget(resourceOrigins, [resource]) !== undefined,
@@ -1469,6 +1479,24 @@ export const grantOAuthPlugins = (settings: GrantOAuthOptions) => {
           handler: createAuthMiddleware(async (ctx) => {
             const post = ctx.method === "POST";
             const input = Schema.decodeUnknownOption(AuthorizeRequest)(post ? ctx.body : ctx.query);
+            if (
+              settings.isolateResources &&
+              Option.isSome(input) &&
+              input.value.resource !== undefined
+            ) {
+              const resources =
+                typeof input.value.resource === "string"
+                  ? [input.value.resource]
+                  : input.value.resource;
+              if (
+                !Array.isArray(resources) ||
+                resources.length !== 1 ||
+                !resources.every(
+                  (r) => typeof r === "string" && grantTarget(resourceOrigins, [r]) !== undefined,
+                )
+              )
+                throw new APIError("BAD_REQUEST", { error: "invalid_target" });
+            }
             if (
               Option.isNone(input) ||
               input.value.resource !== undefined ||
