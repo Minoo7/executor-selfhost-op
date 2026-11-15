@@ -2,9 +2,9 @@
 
 This repository is active. Our production and default branch is
 [`main`](https://github.com/Minoo7/executor-selfhost-op/tree/main).
-It contains upstream beta40 plus organization-wide MCP instructions and safe
-skill file/folder deletion. Runtime, accounts and credential paste/drop follow
-upstream behavior.
+It contains the upstream Executor release recorded in [UPSTREAM.md](UPSTREAM.md)
+plus organization-wide MCP instructions and safe skill file/folder deletion.
+Runtime, accounts and credential paste/drop follow upstream behavior.
 
 Production uses the pinned image in [the Portainer configuration](deploy/production/README.md).
 Deployments remain manual. See [the branch guide](docs/repository-branches.md)

@@ -1,9 +1,10 @@
 # Repository branches
 
 `main` is the default branch and the source of the
-Git-backed Portainer deployment configuration. It contains our upstream-first
-beta40 code and the two retained product additions, organization-wide MCP
-instructions and safe dashboard skill deletion.
+Git-backed Portainer deployment configuration. It contains the upstream release
+recorded in [UPSTREAM.md](../UPSTREAM.md) and the two retained product
+additions, organization-wide MCP instructions and safe dashboard skill
+deletion.
 
 The running application is selected by the immutable image digest in
 `deploy/production/compose.yaml`. Application-source changes need a rebuilt,
@@ -21,7 +22,7 @@ release evidence, links and open pull requests are preserved.
 
 | Branch                                 | Status   | Purpose                                                                                                                                                                       |
 | -------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `main`                                 | CURRENT  | Production configuration and upstream-first beta40 source.                                                                                                                    |
+| `main`                                 | CURRENT  | Production configuration and the upstream release in `UPSTREAM.md`.                                                                                                           |
 | `legacy/main-pre-beta40`               | LEGACY   | Previous default at `68f0df4`. Its build-stop and pending-deletion note is historical.                                                                                        |
 | `upgrade/executor-beta39-20261110`     | LEGACY   | Beta39 port at `eadfc28`, superseded by the deployed beta40 approach.                                                                                                         |
 | `upgrade/executor-beta31-20261028`     | LEGACY   | Earlier upgrade and custom runtime history.                                                                                                                                   |
