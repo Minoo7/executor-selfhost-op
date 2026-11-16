@@ -109,6 +109,16 @@ const plan = <Name extends string>(scenarios: { readonly [_ in Name]: typeof Tes
 
 /** Scenario names and applicability used by both test declarations and test selection. */
 export const scenarios = plan({
+  multiHostOAuth: {
+    fixtures: "actors",
+    file: "multi-host-oauth.spec.ts",
+    title: "Configured public origins isolate OAuth codes, refresh tokens and MCP audiences",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Self-host exact-origin configuration only."),
+      local: na("Local does not serve hosted OAuth."),
+    },
+  },
   skillFileDelete: {
     fixtures: "actors",
     file: "skill-file-delete.spec.ts",
