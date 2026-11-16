@@ -1,74 +1,139 @@
 # Executor production stack
 
-Portainer deploys this Compose file from `Minoo7/executor-selfhost-op`, branch
-`main`, on the existing cluster endpoint. Git owns the
-Compose configuration. Portainer owns deployments and environment inputs.
-Automatic updates and webhooks stay disabled.
+Portainer deploys `deploy/production/compose.yaml` from branch `main` of this repository, on the
+existing endpoint for the ARM64 host `cluster`. Git owns the Compose file. Portainer owns deployments
+and environment inputs. Automatic updates, Git polling, webhooks, pruning and forced pulls stay off.
+A push to `main` does not build or deploy anything. The `executor` image is pinned by digest.
 
-The image is pinned to the qualified ARM64 beta40 digest. It contains upstream
-runtime behavior plus organization MCP instructions and safe skill deletion.
-Changing this file does not rebuild the image or deploy it automatically.
+## Stack and environment
 
-## Required Portainer environment
+- Set `EXECUTOR_URL_ALLOW_HTTP_ORIGINS` in Portainer to the exact JSON string the running stack uses,
+  including its repaired Geotorget origin. The value is private. Never publish it or swap in an example.
+- Volume `executor_executor-v2-data` mounts at `/app/data`. It holds the database, the auth and
+  encryption keys, and the app repositories. Volume `scape-egress_scape-egress-state` mounts at
+  `/var/lib/tailscale`. Both are external and must already exist.
+- Telemetry reads `/opt/executor/otel-sink.yaml` read-only. Keep the Tailscale state, hostname,
+  container names, loopback port `4400` and tsdproxy labels. Do not request a new Tailscale auth key.
+  Find the stack by name (`executor`) and endpoint, never by a stored stack ID.
+- `executor-health.timer` is the watchdog. It must never pin an image or run updates. Suspend only it
+  during maintenance and restore its original state after verification.
 
-Set `EXECUTOR_URL_ALLOW_HTTP_ORIGINS` to the exact JSON string captured from the
-current production stack. Keep its repaired Geotorget origin. Its value is
-preserved privately with the migration receipts; do not replace it with an
-example or publish private configuration. Other environment values are unchanged.
+## Upgrade to a new image
 
-Both volumes are external and must already exist:
+Get owner approval for the digest and the window first. Leave DNS, tsdproxy, Tailscale Serve and
+policy, telemetry and other services alone. Never start stopped computers to repair state.
 
-- `executor_executor-v2-data` mounts at `/app/data`.
-- `scape-egress_scape-egress-state` mounts at `/var/lib/tailscale`.
+### Build and qualify
 
-The telemetry configuration remains a read-only bind from
-`/opt/executor/otel-sink.yaml`. Keep the existing Tailscale state, hostname,
-container names, loopback port and ingress labels. Do not request a new auth key.
+1. Merge the source change to `main`. Build from that merge commit through `git archive`, never from
+   a working tree or a moving branch head.
+2. Build natively for `linux/arm64` with `apps/hosted/self-host/Dockerfile`, never under emulation.
+   Pass `EXECUTOR_BUILD_VERSION` as a build argument (`<upstream version>-<features>-<short sha>-arm64`)
+   and set the OCI `source`, `revision` and `version` labels. A retag cannot change the baked header.
+   Never set `EXECUTOR_BUILD_VERSION` in the container environment.
+3. Read the registry index back and record the index and ARM64 manifest digests. Check the labels,
+   architecture, baked header, and that `/app/workerd` matches the decompressed `linux-arm64` archive
+   pinned in `workerd.json`. Pull with a disposable credential directory. Do not move `latest`.
+4. On a native ARM64 runner that is not production, run `e2e/docker-release.config.ts` with
+   `EXECUTOR_E2E_DOCKER_IMAGE` set to the candidate digest, and check health, the header, login, MCP
+   401, organization instructions in MCP initialize and discovery, and a normal tool call.
+5. Use synthetic data. Production data goes only to a private runner with outbound traffic blocked
+   (a copied install starts its schedules at once), never to a public sandbox or Depot build.
+6. Keep the exact image until the rollback window ends, as a full OCI archive or a digest-checked
+   durable copy. Builds are not reproducible: deploy the qualified digest, never a rebuild of its tag.
 
-## Initial migration
+If Better Auth or the schema changes, review the planned SQL on a stopped copy of the backup first;
+Better Auth commits startup DDL on its own, and `EXECUTOR_DATA_STEPS=report` is not a dry run. Never
+relabel versions, delete the journal, replay backfills, or use `IF NOT EXISTS` to hide a mismatch.
 
-The production migration completed on 13 November 2026. The following steps
-are retained as migration/reinstall reference, not pending work. Portainer
-2.45.1 cannot attach Git to an editor-managed stack in place. Its supported
-migration recreates the same `executor` stack from this repository. That
-interrupts Executor, its Tailscale sidecar and telemetry. It does not require
-changing the application image or migrating its database.
+### Back up
 
-Before teardown, obtain approval for the interruption and these container
-replacements. Back up the saved stack/environment and telemetry configuration.
-Stop the writer and take a fresh verified backup of the data volume, including
-its keys. Capture the Tailscale state consistently while its sidecar is stopped.
-Verify off-host copies, existing volume identities and locally available pinned
-images. Preserve the health watchdog's runtime state.
+1. Read the stack definition and environment from Portainer and compare them with the running
+   container. If they differ, stop: an update from a stale definition reverts live repairs.
+2. Run [Verify](#verify) on the old image. If a required workflow already fails, fix that first.
+3. With `V` the volume size and `I` the saved image size, reserve `V + I + 1 GiB` for the backup,
+   `V + 1 GiB` on the data filesystem (`2V + I + 1 GiB` if shared), and `V + I + 1 GiB` off-host.
+4. Pull and inspect the new digest on the host. The stack uses `pull_policy: never`.
+5. Save the stack definition, environment, telemetry config and old image (`docker save`). Ask people
+   to pause writes; schedules still write.
+6. Stop only `executor` and confirm that no container uses the data volume (a failed `docker ps` is
+   an error). Never copy a running database. Older archives are no substitute for a fresh backup.
+7. Archive with `tar --numeric-owner --xattrs --acls`, record the directory owner and mode, run
+   `gzip -t`, list the archive, and write a SHA-256 manifest. Back up Tailscale state the same way,
+   with its sidecar stopped, when the sidecar will be recreated.
+8. Copy it over SSH to encrypted off-host storage, mode 0700 (it holds the keys), and check the
+   manifest, `gzip -t` and listing there. If the copy fails or the window ends, restart the original.
 
-Delete the existing stack through Portainer without removing volumes. Recreate
-stack `executor` on the same endpoint from this branch and
-`deploy/production/compose.yaml`. Supply the saved environment value. Leave
-Git polling, webhooks, pruning and forced image pulls disabled. Record the new
-stack ID and Git workflow/source linkage after asynchronous deployment finishes.
+### Activate
 
-Require the same image/header, healthy startup, login/assets, anonymous MCP401,
-authenticated organization settings and Geotorget whoami, successful natural
-Rakazo runs and unchanged stopped-computer states. Verify Tailscale identity and
-both volume mounts. Restore the original health watchdog state. Do not reuse
-old operational scripts that hard-code stack ID1.
+Activate and revert only through Portainer. Never write host Compose files, run `docker compose up`,
+or change who owns the stack. Merge the new `executor` digest to `main`, check that nothing else
+changed, and run Portainer's manual Git pull and redeploy.
+
+### Verify
+
+- Healthy within 120 seconds with no restarts or OOM kills. `/health` returns 200 `{"status":"ok"}`
+  with the exact `Executor-Build` header, login and assets load, anonymous `/org/executor/mcp` is 401.
+- An operator session works. Never send email codes, bypass approvals or create grants for a check.
+- Organization instruction additions and revision match the backup.
+- Geotorget `whoami` completes as the expected customer with the saved account.
+- Two natural Rakazo `computers` schedule runs succeed. Stopped computers stay stopped. Never call
+  reconcile, retry, start or resume by hand.
+- App deployments, unpublished app work, account links and grants are unchanged.
+- Watch health, restarts and required workflows for 10 minutes, then restore the watchdog.
+
+Classify failures by cause, never by `grep ERROR`. **Roll back** for a failed migration or startup,
+a crash or OOM loop, lost data, or a required workflow failing inside Executor. **Hold** and report
+for expired credentials, a provider or network failure, or missing evidence; never restore on a guess.
+Known log lines alone never cause a rollback, but keep collecting them: `script terminated for unknown
+reasons`, `connect(): Connection timed out`, `onBroken()`, and the Better Auth client-IP warning.
+Never silence that warning by trusting forwarded headers or disabling rate limits.
+
+### Roll back
+
+An image rollback is a Git change: restore the old digest, merge, redeploy. It does not restore data.
+
+Restore data only for an attributable data or storage failure, using this deployment's backup with
+the old image. It loses every write since the backup; external provider actions stay done. After
+acceptance, a restore needs a new owner decision.
+
+1. Stop the writer, confirm that nothing uses the volume, and check the manifest.
+2. Require an ordinary local directory, not a symlink or mountpoint. Rename the failed data aside on
+   the same filesystem. Extract with numeric ownership, ACLs and xattrs; restore owner and mode.
+3. Load the saved old image, restore the old digest in Git, redeploy, and run [Verify](#verify).
+
+Never start the old engine on partly restored data, and never restore twice. If a rollback fails,
+stop and hand over to the operator.
+
+## Multi-host OAuth
+
+`compose.yaml` sets `EXECUTOR_PUBLIC_ORIGINS` to the canonical origin (`BETTER_AUTH_URL`, always
+first), then the tailnet origin. A Portainer variable alone does not reach the container; Compose
+must map it. [The self-host README](../../apps/hosted/self-host/README.md#multiple-public-oauth-origins)
+defines the format.
+
+- Host selects the origin; unknown hosts get the canonical one. Forwarding headers never select one,
+  so both routes (tsdproxy and Tailscale Serve) must pass the public Host.
+- Each host has its own issuer, tokens and host-only cookies. A token from one host fails on the
+  other. One client ID and user share a refresh family on both hosts; register clients per host.
+- No migration. Missing OAuth resource rows are inserted, never overwritten.
+
+After changing these settings, check on both hosts: health and header, anonymous MCP 401
+challenges, authorization-server and protected-resource discovery, and a full OAuth flow and MCP call
+from a tailnet client. Then run the canonical checks in [Verify](#verify) plus existing MCP clients
+and skill deletion. Device approval, API tokens, upgraded scoped connections and same-client refresh
+invalidation have no two-host E2E; check them by hand when they matter.
 
 ## Recovery
 
-If Git deployment fails, preserve diagnostics and inspect actual stack state
-before retrying a create request. Remove only a confirmed replacement Executor
-stack, preserving both external volumes. Recreate the saved editor definition
-on the original endpoint with its original environment and the same image.
-This requires another interruption. Do not reset data to repair a Git linkage.
+If a Portainer Git deployment fails, keep the diagnostics and inspect the actual stack state before a
+retry. Remove only a confirmed replacement stack and keep both volumes. Never reset data to repair a
+Git link.
 
-Full data restoration is reserved for an attributable data/storage failure and
-uses the fresh stopped-writer snapshots. Preserve candidate data before restore
-and account for writes made after the snapshot. Container writable layers are
-not preserved by stack recreation; the required persistent state must be in the
-verified named volumes or saved host configuration.
+Portainer cannot attach Git to an editor-managed stack in place. To recreate it, back up as above
+(with Tailscale state), delete it without removing volumes, and create `executor` on the same
+endpoint from `main` with the saved environment. Writable container layers are lost, so all state
+must live in the volumes or saved host config.
 
-## Later updates
-
-Commit and review configuration changes on this branch. Trigger Portainer's
-manual pull/redeploy only after approval. Pin every image update to a verified
-digest and keep the data-backup/rollback procedure appropriate to that release.
+Inspect a database only as a stopped copy through the PGlite adapter. Never edit `executor_pg_files`
+pages or open two engines on one directory.
