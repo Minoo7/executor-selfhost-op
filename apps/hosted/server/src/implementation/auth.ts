@@ -80,6 +80,10 @@ export const authOptions = (
     readonly resourceOrigins: ResourceOrigins;
     /** The authorization server's issuer; `${url}/api/auth` where one origin serves everything. */
     readonly issuer: string;
+    readonly tokenPolicy?: Pick<
+      import("@executor-js/mcp-auth/oauth").GrantOAuthOptions,
+      "storeTokens" | "connectionOrigins" | "isolateResources" | "deviceNamespace"
+    >;
   },
   ipAddressHeaders: string[],
   observers: GrantObservers = {},
@@ -100,6 +104,7 @@ export const authOptions = (
         origin: settings.url,
         resourceOrigins: settings.resourceOrigins,
         issuer: settings.issuer,
+        ...settings.tokenPolicy,
         ...observers,
       }),
     ],
