@@ -26,10 +26,12 @@ This external integration is documented by Cloudflare, not certified by Executor
 4. Maintain a proxied CNAME from the pilot auth hostname to the tunnel hostname.
    Its content matches `dnsTarget`. The inspected TSDProxy provider preserves an
    existing record whose content matches, including its proxied setting.
-5. Route only the exact pilot auth hostname privately through this tunnel.
-   The connector's container-local hosts entry resolves that hostname to
-   `100.87.129.61`, so private traffic reaches TSDProxy instead of recursively
-   entering the public tunnel. Gateway must validate the origin certificate.
+5. Apply the single-IP route and policies in `cloudflare-pilot.gateway.json`.
+   Gateway overrides DNS only for the pilot auth hostname to `100.87.129.61`.
+   The /32 route reaches TSDProxy through the connector. The network policy
+   denies other traffic sources and ports. The HTTP policy denies other virtual
+   hosts on this shared TLS listener. Gateway validates the origin certificate.
+   Do not replace the DNS override with public DNS or remove either boundary.
 6. Apply `cloudflare-pilot.tunnel.json`. Public ingress permits only discovery,
    OAuth, login, consent, approval, and build asset paths. It excludes `/mcp`
    transport and management pages. The final ingress rule returns 404.
@@ -58,7 +60,7 @@ Executor policy. Do not describe this connection as least privilege.
 
 Detach the real upstream from the portal first. Stop only the separate
 `executor-pilot` Compose project. Remove only the new TSDProxy entry, private
-hostname route, pilot auth DNS record, and pilot auth Access application.
+IP route and Gateway policies, pilot auth DNS record, and pilot auth Access application.
 Revert the added public origin through Git and manually redeploy stack 28.
 Preserve Executor data, keys, existing DNS, the sidecar, its state, and its grants.
 Do not restore an older database for an ingress-only failure.

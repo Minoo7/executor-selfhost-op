@@ -4,9 +4,16 @@ services:
     container_name: executor-pilot-cloudflared
     restart: unless-stopped
     network_mode: host
-    command: ["tunnel", "--no-autoupdate", "run", "--token-file", "/run/secrets/tunnel-token"]
-    extra_hosts:
-      - executor-auth-pilot.planasolutions.ai:100.87.129.61
+    command:
+      [
+        "tunnel",
+        "--metrics",
+        "127.0.0.1:20241",
+        "--no-autoupdate",
+        "run",
+        "--token-file",
+        "/run/secrets/tunnel-token",
+      ]
     volumes:
       - /opt/executor/pilot/tunnel-token:/run/secrets/tunnel-token:ro
     read_only: true
