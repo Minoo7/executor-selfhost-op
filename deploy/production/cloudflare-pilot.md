@@ -47,8 +47,16 @@ certify it.
    revocation. Executor authenticates these protocol requests. Browser
    authorization retains both Access and native Executor sign-in.
 9. Add the real OAuth server with server-level Gateway routing. Attach it to the
-   portal with Require user auth enabled. Complete native Executor consent in
-   the browser, then reconnect Scape. Do not attach the documentation diagnostic.
+   portal with Require user auth enabled. The verified setup pre-registers a
+   confidential native Executor OAuth client and configures Cloudflare's manual
+   OAuth credentials. Use `client_secret_basic`, `mcp offline_access`, and the
+   shared callback
+   `https://oauth-callbacks.cloudflareaccess.com/cdn-cgi/access/outbound-oauth-callback`.
+   Enable the shared callback on the server. Send the generated secret directly
+   to Cloudflare's separate `client_secret` field; never commit it. Set discovery
+   endpoints and issuer to the pilot auth origin's native metadata. Reconnect
+   Scape, authorize the real server, complete native Executor consent, and
+   continue back to Scape. Do not attach the documentation diagnostic.
 
 ## Verify before calling the connection complete
 
@@ -70,6 +78,7 @@ is not least privilege.
 ## Roll back the integration
 
 1. Detach the real upstream from the portal and revoke its native Executor grant.
+   Remove the dedicated native OAuth client after revoking its grants.
 2. Remove the pilot /32 route and DNS override. Remove only the pilot Gateway
    policies after the route is gone.
 3. Stop the separate `executor-pilot` Compose project. Disable and stop
