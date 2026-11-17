@@ -38,27 +38,57 @@ handshake. TSDProxy manages ACME renewal; an actual renewal was not observed.
   `127.0.0.1:20241`. Executor reports healthy. No reboot, WARP-client denial,
   capacity, or high-availability test was performed.
 
-## Open Scape acceptance
+## Scape acceptance
 
 Only the real server is attached to the owner-only portal. It uses per-user
 OAuth and Code Mode is off. The owner requested all apps and accounts. Native
-Executor sign-in and consent are still required; no administrative bearer was
-provided to the portal.
+Executor sign-in and consent completed for Plana Solutions; no administrative
+bearer was provided to the portal.
 
-Scape's saved connector times out on the portal's server-list tool. Reconnect
-returns to Connected without a new visible OAuth flow. Pilot portal tokens were
-revoked, but this did not trigger visible reauthorization. The cause of Scape's
-remaining failure is not established. Confirmation to remove and re-add this
-pilot connector is pending because Scape labels that action permanent.
+The owner approved removing and re-adding the saved Scape connector. The initial
+automatic upstream OAuth configuration remained in Waiting with no registered
+client. A sync attempt did not complete authentication. The Cloudflare dashboard
+accepted the cached password but required a security key; its login was not
+completed and MFA was not changed.
 
-No successful real Executor tool call, refresh, or unauthorized-identity test
-through Scape has been observed. Do not call this integration complete.
+The working alternative uses [Cloudflare's manual OAuth configuration](https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/mcp-portals/#configure-manual-oauth-credentials).
+A confidential client named `Cloudflare Executor portal` was registered through
+Executor's public native registration endpoint. It uses `client_secret_basic`,
+`mcp offline_access`, authorization-code and refresh-token grants, and the shared
+callback `https://oauth-callbacks.cloudflareaccess.com/cdn-cgi/access/outbound-oauth-callback`.
+Its secret was passed directly to Cloudflare's API and was not written to these
+files. The server has `is_shared_oauth_callback_enabled=true`; the portal retains
+per-user authorization. No routing, Access policy, or Executor image change was
+needed for this alternative.
+
+Scape Reconnect opened the portal login. The Tailscale identity link did not
+finish loading during the attempt; the existing owner email-code method worked.
+Native Executor sign-in used the existing 1Password login. Consent displayed
+all apps available to the owner and approvals through the agent. The portal
+then showed the real backend Connected and returned to Scape's callback.
+
+Cloudflare reports the backend Ready with six native tools: `skills`, `search`,
+`describe`, `call`, `execute`, and `resume`. Through Scape, `portal_list_servers`
+returned the real backend. Native search and describe found
+`tools.portainer.api.status.statusInspect`. A call through
+`executor-selfhost-pilot_call` returned Portainer version `2.45.1`. The successful input was
+`{"calls":{"path":"tools.portainer.api.status.statusInspect","input":{}}}`.
+Scape required its own approval cards. The read-only Executor tool did not
+require a second native approval. Earlier attempts with `{path,args}` failed
+schema validation; that was a client invocation error, not an ingress failure.
+
+Refresh, revocation, an unauthorized identity, nested `execute`, native approval
+resume, long operations, and capacity have not been tested through Scape.
+ChatGPT.com has not been tested. This establishes a working Scape read, not full
+security or scale acceptance. Executor approval settings remain unchanged.
 
 ## Current Cloudflare resources
 
 - Portal `executor-pilot`; Access application `df49a467-9708-40a4-9b06-0414b18ed844`.
 - Real server `executor-selfhost-pilot`; Access application
   `7a13d3ad-c78c-478c-86a5-ee505f0c3197`.
+- Native OAuth client `mLFjtEiLSKBWaGPyVhBJOWAUzCasckxb`, named
+  `Cloudflare Executor portal`.
 - Pilot browser Access application `71423572-58db-4f21-b46e-998c600032cd`.
 - Tunnel `47aa3917-4661-4538-8186-397de2fc635c`.
 - Pilot auth DNS record `b724eb7b3dde044fbc08970fe4ac39d6`.
