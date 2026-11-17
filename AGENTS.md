@@ -1,5 +1,13 @@
 # Working on Executor
 
+> **This repository is a self-hosted build of upstream Executor.** Upstream's
+> export leaves out `.github/` and `notes/`, so this repository has no CI and
+> none of the `notes/*.md` files this guide links to. Where this guide says CI
+> runs the full suite, nothing does here: run `bun run e2e:self-host` in full
+> before handing over a change to shared code, and say so in the handoff.
+> Upstream releases arrive through the `track-executor` skill; see
+> [UPSTREAM.md](UPSTREAM.md).
+
 Before changing code, read:
 
 1. [Coding style and engineering direction](notes/coding-style.md).
