@@ -4,9 +4,16 @@ services:
     container_name: executor-pilot-cloudflared
     restart: unless-stopped
     network_mode: host
-    command: ["tunnel", "--no-autoupdate", "run", "--token-file", "/run/secrets/tunnel-token"]
-    extra_hosts:
-      - executor-auth-pilot.planasolutions.ai:100.87.129.61
+    command:
+      [
+        "tunnel",
+        "--metrics",
+        "127.0.0.1:20241",
+        "--no-autoupdate",
+        "run",
+        "--token-file",
+        "/run/secrets/tunnel-token",
+      ]
     volumes:
       - /opt/executor/pilot/tunnel-token:/run/secrets/tunnel-token:ro
     read_only: true
@@ -15,3 +22,23 @@ services:
     user: "0:0"
     cpus: 0.5
     mem_limit: 256m
+  origin:
+    image: nginx@sha256:901e593c95dc85f5a729f5765516321366ef4ac401821431d408897e95287d0a
+    container_name: executor-pilot-origin
+    restart: unless-stopped
+    network_mode: host
+    entrypoint: ["nginx"]
+    command: ["-g", "daemon off;"]
+    volumes:
+      - /opt/executor/pilot/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /opt/tsdproxy/data/certmagic/certificates/acme-v02.api.letsencrypt.org-directory/executor-auth-pilot.planasolutions.ai:/certs:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+      - /var/cache/nginx:rw,noexec,nosuid,size=16m
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE, SETGID]
+    security_opt: [no-new-privileges:true]
+    user: "0:0"
+    cpus: 0.5
+    mem_limit: 128m

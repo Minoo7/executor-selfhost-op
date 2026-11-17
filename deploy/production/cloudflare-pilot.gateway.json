@@ -1,0 +1,35 @@
+{
+  "route": {
+    "network": "10.255.44.1/32",
+    "tunnel_id": "47aa3917-4661-4538-8186-397de2fc635c"
+  },
+  "policies": [
+    {
+      "name": "Executor pilot private route boundary",
+      "action": "block",
+      "filters": ["l4"],
+      "enabled": true,
+      "precedence": 1,
+      "traffic": "net.dst.ip in {10.255.44.1} and not(net.dst.port == 443 and net.onramp.type == \"mcp_portal\")"
+    },
+    {
+      "name": "Executor pilot private DNS answer",
+      "action": "override",
+      "filters": ["dns"],
+      "enabled": true,
+      "precedence": 2,
+      "traffic": "dns.fqdn == \"executor-auth-pilot.planasolutions.ai\"",
+      "rule_settings": {
+        "override_ips": ["10.255.44.1"]
+      }
+    },
+    {
+      "name": "Executor pilot upstream host boundary",
+      "action": "block",
+      "filters": ["http"],
+      "enabled": true,
+      "precedence": 3,
+      "traffic": "any(http.conn.dst_ip[*] in {10.255.44.1}) and not(http.request.host == \"executor-auth-pilot.planasolutions.ai\")"
+    }
+  ]
+}

@@ -3,7 +3,7 @@
     "ingress": [
       {
         "hostname": "executor-auth-pilot.planasolutions.ai",
-        "path": "^(/\\.well-known/oauth-protected-resource(/mcp)?|/\\.well-known/oauth-authorization-server(/api/auth)?|/api/auth/oauth2/(register|authorize|token|public-client|consent)|/api/auth/(get-session|organization/list|sign-in/email)|/login|/mcp/authorize|/mcp/approve/[^/]+|/api/mcp/approvals/[^/]+|/assets/.*|/favicon\\.png)$",
+        "path": "^(/[.]well-known/oauth-protected-resource(/mcp)?|/[.]well-known/oauth-authorization-server(/api/auth)?|/api/auth/oauth2/(register|authorize|token|revoke|public-client|consent)|/api/auth/(get-session|organization/list|sign-in/email)|/login|/mcp/authorize|/mcp/approve/[^/]+|/api/mcp/approvals/[^/]+|/assets/.*|/favicon[.]png)$",
         "service": "http://127.0.0.1:4400",
         "originRequest": {
           "httpHostHeader": "executor-auth-pilot.planasolutions.ai"
@@ -12,9 +12,6 @@
       {
         "service": "http_status:404"
       }
-    ],
-    "warp-routing": {
-      "enabled": true
-    }
+    ]
   }
 }
