@@ -19,8 +19,10 @@ certify it.
    with mode 0600. Install `cloudflare-pilot.compose.yaml` as
    `/opt/executor/pilot/compose.yaml` and `cloudflare-pilot.nginx.conf` as
    `/opt/executor/pilot/nginx.conf`.
-3. Install and enable `cloudflare-pilot-origin-address.service` in systemd before
-   starting the separate `executor-pilot` Compose project. The dedicated address
+3. Install `cloudflare-pilot-origin-address.service` as
+   `/etc/systemd/system/executor-pilot-origin-address.service`. Enable
+   `executor-pilot-origin-address.service` before starting the separate
+   `executor-pilot` Compose project. The dedicated address
    is `10.255.44.1/32` on loopback. Neither container shares Executor's data or
    Tailscale state. Nginx binds only the dedicated address, rejects unknown SNI
    and HTTP hosts, and forwards only MCP and OAuth paths to loopback port 4400.
