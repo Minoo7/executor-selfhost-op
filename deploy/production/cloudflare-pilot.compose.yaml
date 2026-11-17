@@ -1,0 +1,17 @@
+services:
+  cloudflared:
+    image: cloudflare/cloudflared@sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d
+    container_name: executor-pilot-cloudflared
+    restart: unless-stopped
+    network_mode: host
+    command: ["tunnel", "--no-autoupdate", "run", "--token-file", "/run/secrets/tunnel-token"]
+    extra_hosts:
+      - executor-auth-pilot.planasolutions.ai:100.87.129.61
+    volumes:
+      - /opt/executor/pilot/tunnel-token:/run/secrets/tunnel-token:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    user: "0:0"
+    cpus: 0.5
+    mem_limit: 256m
