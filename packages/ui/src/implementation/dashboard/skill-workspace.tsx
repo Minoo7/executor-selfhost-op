@@ -25,10 +25,15 @@ import {
   DialogDescription,
   DialogFooter,
 } from "../components/dialog.tsx";
-import { SkillFileEditor, type SkillEditing, type Committed } from "./skill-editor.tsx";
+import {
+  HumanOnlyField,
+  SkillFileEditor,
+  type SkillEditing,
+  type Committed,
+} from "./skill-editor.tsx";
 import { SkillContent } from "./skill-content.tsx";
 import { SkillSize } from "./skill-size.tsx";
-import { skillDescription, splitSkillDocument } from "./skill-document.ts";
+import { skillDescription, skillHumanOnly, splitSkillDocument } from "./skill-document.ts";
 
 interface Skill {
   readonly name: string;
@@ -290,6 +295,11 @@ export function SkillWorkspace<E>({
                 <p className="mb-4 text-xs text-muted-foreground">
                   This deployed skill is read-only here.
                 </p>
+                {file.path === "SKILL.md" && (
+                  <HumanOnlyField
+                    checked={skillHumanOnly(splitSkillDocument(file.content).frontmatter).enabled}
+                  />
+                )}
                 <SkillContent
                   document={{
                     ...file,

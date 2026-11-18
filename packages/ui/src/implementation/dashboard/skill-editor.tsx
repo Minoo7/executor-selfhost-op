@@ -9,6 +9,8 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useId,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
@@ -23,11 +25,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../components/dropdown-menu.tsx";
+import { Checkbox } from "../components/checkbox.tsx";
 import { Textarea } from "../components/textarea.tsx";
 import { useHydrated } from "../hooks/hydrated.ts";
 import {
   joinSkillDocument,
   skillDescription,
+  skillHumanOnly,
   splitSkillDocument,
   withSkillDescription,
 } from "./skill-document.ts";
@@ -96,6 +100,39 @@ function SwitchItem({
   );
 }
 
+/**
+ * `disable-model-invocation`: agents such as Claude Code hide the skill from the model, so only a
+ * person can start it. Without `onCheckedChange` it only shows the saved value.
+ */
+export function HumanOnlyField({
+  checked,
+  onCheckedChange,
+  reason,
+}: {
+  readonly checked: boolean;
+  readonly onCheckedChange?: (checked: boolean) => void;
+  /** Why the value cannot change here. */
+  readonly reason?: string;
+}) {
+  const note = useId();
+  return (
+    <div className="mb-4 flex flex-col gap-1 text-sm">
+      <label className="flex w-fit items-center gap-2">
+        <Checkbox
+          checked={checked}
+          disabled={onCheckedChange === undefined}
+          onCheckedChange={(value) => onCheckedChange?.(value === true)}
+          aria-describedby={note}
+        />
+        <span>Only I can start this</span>
+      </label>
+      <p id={note} className="pl-6 text-xs text-muted-foreground">
+        {reason ?? "When checked, agents can't start this skill. A person starts it by name."}
+      </p>
+    </div>
+  );
+}
+
 /** A commit made by the editor, and whether the person asked to deploy it. */
 export interface Committed {
   readonly commit: string;
@@ -146,6 +183,8 @@ export function SkillFileEditor<E>({
   const [base, setBase] = useState(stored);
   const [parts, setParts] = useState(() => splitSkillDocument(stored));
   const [description, setDescription] = useState(() => skillDescription(parts.frontmatter));
+  const invocation = useMemo(() => skillHumanOnly(parts.frontmatter), [parts.frontmatter]);
+  const [humanOnly, setHumanOnly] = useState(invocation.enabled);
   const [body, setBody] = useState(parts.body);
   const markdown = /\.md$/i.test(path);
   const hydrated = useHydrated();
@@ -161,10 +200,13 @@ export function SkillFileEditor<E>({
   const savingRef = useRef(false);
   const [error, setError] = useState<Cause.Cause<E>>();
   const [changed, setChanged] = useState(false);
+  // Flip the stored line first, so the description edit sees the same frontmatter the control read.
+  const frontmatter =
+    invocation.kind === "editable" && humanOnly !== invocation.enabled
+      ? invocation.toggled
+      : parts.frontmatter;
   const content = joinSkillDocument({
-    frontmatter: instructions
-      ? withSkillDescription(parts.frontmatter, description)
-      : parts.frontmatter,
+    frontmatter: instructions ? withSkillDescription(frontmatter, description) : parts.frontmatter,
     body,
   });
   const dirty = content !== base;
@@ -185,6 +227,7 @@ export function SkillFileEditor<E>({
     setBase(next);
     setParts(split);
     setDescription(skillDescription(split.frontmatter));
+    setHumanOnly(skillHumanOnly(split.frontmatter).enabled);
     setBody(split.body);
     setSession({ id: session.id + 1, original: split.body });
   };
@@ -295,6 +338,13 @@ export function SkillFileEditor<E>({
             className="field-sizing-content min-h-0 resize-none rounded-none border-0 bg-transparent p-0 text-sm leading-6 text-muted-foreground shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
         </label>
+      )}
+      {instructions && (
+        <HumanOnlyField
+          checked={humanOnly}
+          onCheckedChange={hydrated && invocation.kind === "editable" ? setHumanOnly : undefined}
+          reason={invocation.kind === "locked" ? invocation.reason : undefined}
+        />
       )}
       {!hydrated ? (
         reader
