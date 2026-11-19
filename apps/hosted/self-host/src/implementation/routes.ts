@@ -5,6 +5,7 @@ import {
   selfHostProvisioningServices,
 } from "@executor-js/hosted-server/provisioning";
 import { Schedule } from "effect";
+import { Digest } from "effect/crypto";
 import { executorSelfHostApiDocument } from "../contracts/api.ts";
 import {
   startScheduleWorker,
@@ -175,6 +176,7 @@ export const selfHostRouteMap = <DashboardE, DashboardR>(options: {
           Layer.provide(auth.apiIdentity),
         );
         const apm = apmRegistryRoutes.pipe(
+          HttpRouter.provideRequest(Digest.layerWebCrypto),
           HttpRouter.provideRequest(executorServices),
           HttpRouter.provideRequest(auth.identity),
           HttpRouter.provideRequest(auth.apiIdentity),
