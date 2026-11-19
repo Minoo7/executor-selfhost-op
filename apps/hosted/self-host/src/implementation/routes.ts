@@ -36,6 +36,7 @@ import {
   apiProtectedResource,
   lazyHostedApiDocument,
   ProductAnalytics,
+  apmRegistryRoutes,
 } from "@executor-js/hosted-server";
 import { recordRequestRejections, requestTiming } from "@executor-js/telemetry/http";
 import { appAddresses, hostedAppUi } from "@executor-js/hosted-server/app-ui";
@@ -173,10 +174,16 @@ export const selfHostRouteMap = <DashboardE, DashboardR>(options: {
           Layer.provide(auth.identity),
           Layer.provide(auth.apiIdentity),
         );
+        const apm = apmRegistryRoutes.pipe(
+          HttpRouter.provideRequest(executorServices),
+          HttpRouter.provideRequest(auth.identity),
+          HttpRouter.provideRequest(auth.apiIdentity),
+        );
         const productRoutes = Layer.mergeAll(
           publishedSkillRoutes(Effect.succeed(skills)),
           authoring,
           api,
+          apm,
           browserTelemetry.pipe(HttpRouter.provideRequest(auth.identity)),
           HttpRouter.add("*", "/api/webhooks/:appId/:subscriptionId", hostedWebhookCallback).pipe(
             HttpRouter.provideRequest(executorServices),

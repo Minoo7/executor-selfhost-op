@@ -197,6 +197,27 @@ export const scenarios = plan({
       local: na("Local has no hosted organization actors."),
     },
   },
+  apmRegistry: {
+    fixtures: "actors",
+    file: "apm-registry.spec.ts",
+    title:
+      "APM registry serves an app's current skill revision as a verified archive to API keys only",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Only self-host mounts the APM registry route."),
+      local: na("Local has no hosted organizations or API keys."),
+    },
+  },
+  apmRegistryAccess: {
+    fixtures: "actors",
+    file: "apm-registry.spec.ts",
+    title: "APM registry honors the caller's current app and account access",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Only self-host mounts the APM registry route."),
+      local: na("Local has no hosted organizations or API keys."),
+    },
+  },
   organizationMcpInstructions: {
     fixtures: "actors",
     file: "organization-mcp-instructions.spec.ts",
