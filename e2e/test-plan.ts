@@ -197,6 +197,32 @@ export const scenarios = plan({
       local: na("Local has no hosted organization actors."),
     },
   },
+  skillHumanOnly: {
+    fixtures: "actors",
+    file: "skill-human-only.spec.ts",
+    title:
+      "Skill human-only control saves one added or removed frontmatter line, shows it on load and stays read-only for dynamic skills",
+    targets: {
+      "self-host": scheduled,
+      cloud: sourceStorageCloud,
+      local: na(
+        "The shared editor and commit route are exercised through hosted organization routes.",
+      ),
+    },
+  },
+  skillHumanOnlyFrontmatter: {
+    fixtures: "actors",
+    file: "skill-human-only.spec.ts",
+    title:
+      "Skill human-only control edits one line of existing or unusual frontmatter and locks frontmatter it cannot edit safely",
+    targets: {
+      "self-host": scheduled,
+      cloud: sourceStorageCloud,
+      local: na(
+        "The shared editor and commit route are exercised through hosted organization routes.",
+      ),
+    },
+  },
   apmRegistry: {
     fixtures: "actors",
     file: "apm-registry.spec.ts",
