@@ -8007,7 +8007,7 @@ export const scenarios = plan({
     title: "API grants retain exact selections through deploys, refresh and live narrowing",
     targets: {
       "self-host": scheduled,
-      cloud: scheduled,
+      cloud: sourceStorageCloud,
       local: na("Hosted OAuth grant scenario"),
     },
   },

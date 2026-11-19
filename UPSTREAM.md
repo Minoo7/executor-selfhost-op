@@ -14,8 +14,8 @@ merge. Its `executor.status` tool reads the State table below from git.
 | Item                 | Value                                                                    |
 | -------------------- | ------------------------------------------------------------------------ |
 | Upstream             | `https://github.com/UsefulSoftwareCo/executor.git`, branch `v2-releases` |
-| Last merged release  | `executor@2.0.0-beta.63`                                                 |
-| Last merged upstream | `624fa36ba14b6cf1889e86612a0efccf156f60e3`                               |
+| Last merged release  | `executor@2.0.0-beta.64`                                                 |
+| Last merged upstream | `62f7aa0e66f649fcd7a446312e8a4433ffb9dc36`                               |
 
 The tag `executor@<release>` on upstream must point at the recorded commit, and
 the recorded commit must be an ancestor of this branch.
