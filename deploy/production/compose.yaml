@@ -26,7 +26,7 @@ services:
       tsdproxy.port.1: "443/https:4400/http"
     pull_policy: never
   executor:
-    image: registry.depot.dev/5884x6f4tn@sha256:eb61385f240512302f3d3a5e2e9c879485551ba8ff0696fc9c650a0384cdc5b3
+    image: registry.depot.dev/5884x6f4tn@sha256:1a69258c07e00258ca5f5a0a4c6a9d3a55627ed798dd13b9bc24a3e723631d28
     container_name: executor
     cpu_shares: 4096
     init: true
