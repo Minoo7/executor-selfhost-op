@@ -3,6 +3,7 @@ import {
   discoverableTools,
   discoversTool,
   permitsApp,
+  permittedToolAppIds,
   permitsRouter,
   requiresToolMetadata,
 } from "@executor-js/authorization";
@@ -27,6 +28,7 @@ import {
 import { Effect, Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { HostedApi } from "../contracts/api.ts";
+import type { HostedToolCatalog } from "../contracts/tools.ts";
 import { HostedExecutor } from "../contracts/executor.ts";
 import { CurrentUserId, Forbidden } from "../contracts/auth.ts";
 import { CurrentAuthorization } from "../contracts/authorization.ts";
@@ -38,6 +40,48 @@ import {
   selectedActiveVersion,
   usableApp,
 } from "./access.ts";
+
+import { visibleApps } from "./resource-policy.ts";
+
+const catalogSnapshot = Effect.gen(function* () {
+  const policy = yield* CurrentAuthorization;
+  const owner = yield* currentOwner;
+  const executor = yield* Effect.flatten(HostedExecutor);
+  const apps = yield* executor.apps
+    .list({ owner, ids: permittedToolAppIds(policy) })
+    .pipe(Effect.flatMap(visibleApps));
+  return {
+    apps: yield* Effect.forEach(
+      apps,
+      (app) =>
+        Effect.gen(function* () {
+          const { id, slug, name } = app;
+          const { version, accounts } = yield* selectedActiveVersion(executor, owner, { app: id });
+          const index = yield* executor.tools.keptIndex({ app: id, version, accounts });
+          if (index === undefined) return { id, slug, name, status: "pending" } as const;
+          return {
+            id,
+            slug,
+            name,
+            status: "indexed",
+            tools: index.items
+              .filter((tool) => discoversTool(policy, { app: id, tool }))
+              .map(({ name, description }) => ({ name, description })),
+          } as const;
+        }).pipe(
+          Effect.catch(() =>
+            Effect.succeed({
+              id: app.id,
+              slug: app.slug,
+              name: app.name,
+              status: "unavailable" as const,
+            }),
+          ),
+        ),
+      { concurrency: 8 },
+    ),
+  } satisfies typeof HostedToolCatalog.Type;
+});
 
 /** Discover the current account-dependent catalog with the caller's resolved accounts. */
 export const listTools = (
@@ -215,6 +259,7 @@ const reviewedTool = (app: AppId, requestId: ApprovalRequestId) =>
 /** Current app and account grants authorize both discovery and execution. */
 export const hostedToolHandlers = HttpApiBuilder.group(HostedApi, "tools", (handlers) =>
   handlers
+    .handle("catalogSnapshot", () => catalogSnapshot)
     .handle("list", ({ params, query }) => listTools({ app: params.app, ...query }))
     .handle("index", ({ params, query }) => indexTools({ app: params.app, ...query }))
     .handle("get", ({ params, query }) => getTool({ app: params.app, tool: params.tool, ...query }))

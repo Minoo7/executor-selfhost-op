@@ -1468,6 +1468,17 @@ export const makeTools = (
           ),
         };
       }).pipe(Effect.withSpan("sdk.tools.scheduled")),
+    keptIndex: (input: Parameters<Executor["tools"]["index"]>[0]) =>
+      Effect.gen(function* () {
+        const state = yield* listed(input);
+        const listing = yield* listings.keptForDiscovery(state);
+        if (listing === undefined) return undefined;
+        return {
+          ...listing.catalog,
+          routers: listing.routers,
+          items: listing.items.map(summarizeTool),
+        };
+      }).pipe(Effect.withSpan("sdk.tools.keptIndex")),
     /**
      * The catalog without schemas, read from the same kept listing as `list`, so browsing an app
      * evaluates it no more often than MCP discovery does.

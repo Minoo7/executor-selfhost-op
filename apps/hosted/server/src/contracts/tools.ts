@@ -104,8 +104,30 @@ const reviewErrors = [
   Forbidden,
   ToolRunApprovalRefused,
 ] as const;
+const CatalogApp = Schema.Struct({ id: AppId, slug: Schema.String, name: Schema.String });
+export const HostedToolCatalog = Schema.Struct({
+  apps: Schema.Array(
+    Schema.Union([
+      Schema.Struct({
+        ...CatalogApp.fields,
+        status: Schema.Literal("indexed"),
+        tools: Schema.Array(Schema.Struct({ name: ToolName, description: Schema.String })),
+      }),
+      Schema.Struct({ ...CatalogApp.fields, status: Schema.Literal("pending") }),
+      Schema.Struct({ ...CatalogApp.fields, status: Schema.Literal("unavailable") }),
+    ]),
+  ),
+});
+
 /** Members may discover tools; execution requires an administrator in the handler. */
 export const HostedTools = HttpApiGroup.make("tools")
+  .add(
+    HttpApiEndpoint.get("catalogSnapshot", "/api/organizations/:organization/tool-catalog", {
+      params: { organization: OrganizationReference },
+      success: HostedToolCatalog,
+      error: [StorageError, OrganizationForbidden],
+    }).annotate(RequiredAction, "discover"),
+  )
   .add(
     HttpApiEndpoint.get("list", prefix, {
       params,

@@ -1,7 +1,7 @@
 /** MCP catalog caching through real app deploys, storage and upstream HTTP boundaries. */
 import { expect, layer } from "@effect/vitest";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
-import { Config, Effect, Layer, Option, Schedule, Schema } from "effect";
+import { Config, Effect, Layer, Option, Redacted, Schedule, Schema } from "effect";
 import {
   HttpRouter,
   HttpClient,
@@ -313,6 +313,75 @@ const executeAs = (app: Effect.Success<ReturnType<typeof deploy>>, name: string)
   });
 
 layer(HostedLive, { excludeTestServices: true })("MCP cache", (it) => {
+  it.effect(scenarios.hostedToolCatalogSnapshot.title, (context) =>
+    withHostedCase(
+      context,
+      Effect.gen(function* () {
+        const readyOrigin = yield* fixture();
+        const slowOrigin = yield* fixture();
+        yield* control(readyOrigin, { count: 1, delayMs: 0 });
+        yield* control(slowOrigin, { count: 1, delayMs: 60_000 });
+        const ready = yield* deploy(`${readyOrigin}/mcp`, false);
+        const slow = yield* deploy(`${slowOrigin}/mcp`, false);
+        const { api, actors, prefix } = ready;
+        const key = yield* body(
+          Schema.Struct({ id: Schema.String, key: Schema.RedactedFromValue(Schema.String) }),
+          yield* api.request(actors.owner, "POST", "/api/auth/api-key/create", {
+            name: "Raycast catalog snapshot",
+          }),
+        );
+        yield* Effect.addFinalizer(() =>
+          api
+            .request(actors.owner, "POST", "/api/auth/api-key/delete", { keyId: key.id })
+            .pipe(Effect.ignore),
+        );
+        const raycast = yield* api.session();
+        const snapshot = Effect.gen(function* () {
+          const response = yield* api.request(raycast, "GET", `${prefix}/tool-catalog`, undefined, {
+            authorization: `Bearer ${Redacted.value(key.key)}`,
+          });
+          expect(response.status).toBe(200);
+          return yield* body(
+            Schema.Struct({
+              apps: Schema.Array(
+                Schema.Struct({
+                  id: Schema.String,
+                  status: Schema.Literals(["indexed", "pending", "unavailable"]),
+                  tools: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String }))),
+                }),
+              ),
+            }),
+            response,
+          );
+        });
+        expect((yield* snapshot).apps.find((app) => app.id === ready.id)?.status).toBe("pending");
+        expect((yield* control(readyOrigin)).counters.list).toBe(0);
+        expect((yield* api.request(actors.owner, "GET", `${ready.path}/tools/index`)).status).toBe(
+          200,
+        );
+        const readyRequests = (yield* control(readyOrigin)).counters.list;
+        expect(readyRequests).toBeGreaterThan(0);
+        yield* api.request(actors.owner, "GET", `${slow.path}/tools/index`).pipe(Effect.forkScoped);
+        yield* Effect.gen(function* () {
+          if ((yield* control(slowOrigin)).counters.list === 0)
+            return yield* Effect.fail("Provider has not been reached");
+        }).pipe(Effect.retry(Schedule.spaced("100 millis")), Effect.timeout("15 seconds"));
+
+        const result = yield* snapshot.pipe(Effect.timeout("5 seconds"));
+        expect(result.apps.find((app) => app.id === ready.id)).toMatchObject({
+          status: "indexed",
+          tools: expect.arrayContaining([{ name: "upstream.revision_1" }]),
+        });
+        expect(result.apps.find((app) => app.id === slow.id)).toEqual({
+          id: slow.id,
+          status: "pending",
+        });
+        expect((yield* control(readyOrigin)).counters.list).toBe(readyRequests);
+        expect((yield* control(slowOrigin)).counters.list).toBe(1);
+      }),
+    ),
+  );
+
   it.effect(scenarios.mcpCatalogCache.title, (context) =>
     withHostedCase(
       context,

@@ -677,6 +677,16 @@ export const scenarios = plan({
       local: na("Hosted app version scenario"),
     },
   },
+  hostedToolCatalogSnapshot: {
+    fixtures: "actors",
+    file: "mcp-catalog.spec.ts",
+    title: "Hosted tool catalog snapshot serves stored tools beside a stalled provider",
+    targets: {
+      "self-host": scheduled,
+      cloud: na("Loopback provider controlled by the scenario"),
+      local: na("Hosted tool catalog API"),
+    },
+  },
   mcpCatalogCache: {
     fixtures: "actors",
     file: "mcp-catalog.spec.ts",

@@ -18,6 +18,7 @@ import type {
   SearchableTools,
   ToolApproval,
   ToolApprovalNotFound,
+  ToolIndex,
   ToolInvocationOptions,
   ToolListOptions,
   ToolSearchInput,
@@ -383,6 +384,13 @@ export type Executor = Omit<FlatExecutor, "apps" | "appWorkflows" | "appWorkflow
       readonly requestId: ApprovalRequestId;
       readonly owner?: OwnerId;
     }) => Effect.Effect<ToolApproval, StorageError | ToolApprovalNotFound>;
+    /** Read an authorized stored listing for this deployment and account selection. */
+    readonly keptIndex: (
+      input: Parameters<FlatExecutor["tools"]["index"]>[0],
+    ) => Effect.Effect<
+      ToolIndex | undefined,
+      Effect.Error<ReturnType<FlatExecutor["tools"]["index"]>>
+    >;
     /**
      * Host-only: keep the target's current listing as search rows, reading the listing as `list`
      * does only when its rows are missing or older than a kept listing may be served. It names
@@ -473,7 +481,7 @@ export type PromiseExecutor = Promisify<
     | "tools"
     | "apps"
   > & {
-    readonly tools: Omit<Executor["tools"], "approval" | "searchable" | "search">;
+    readonly tools: Omit<Executor["tools"], "approval" | "keptIndex" | "searchable" | "search">;
     readonly apps: Omit<Executor["apps"], "copyAs" | "build">;
   }
 >;
