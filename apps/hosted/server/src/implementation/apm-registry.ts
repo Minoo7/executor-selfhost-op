@@ -9,9 +9,11 @@ import { UserFacingError } from "@executor-js/utils/user-facing-error";
 import { Effect, Layer, Schema, SchemaAST } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { Base64 } from "effect/encoding";
+import { Unauthorized } from "../contracts/auth.ts";
 import { CurrentAuthorization } from "../contracts/authorization.ts";
 import { HostedExecutor } from "../contracts/executor.ts";
 import { apmPackageFiles, gzipStored, tar } from "./apm-archive.ts";
+import { isApiKey } from "./api-keys.ts";
 import { currentOwner } from "./access.ts";
 import { withOrganizationRequest } from "./organization.ts";
 import { appSkillBundle } from "./skills.ts";
@@ -21,8 +23,8 @@ import { appSkillBundle } from "./skills.ts";
  * archives. `>=1.0.0` keeps selecting the newest one.
  */
 const archiveLayout = 0;
-export const apmPackageVersion = (revision: SkillRevision) =>
-  `1.${archiveLayout}.0+${revision.slice(0, 12)}`;
+const apmPackageVersion = (revision: typeof SkillRevision.Type) =>
+  `1.${archiveLayout}.0+${revision}`;
 
 const packages = "/apm/v1/packages/:organization/:repo/versions";
 
@@ -33,11 +35,14 @@ class PackageNotFound extends Schema.TaggedError<PackageNotFound>()(
 ) {}
 
 const problem = (status: number, title: string, detail: string, instance: string) =>
-  HttpServerResponse.text(JSON.stringify({ type: "about:blank", title, status, detail, instance }), {
-    status,
-    contentType: "application/problem+json; charset=utf-8",
-    headers: { "cache-control": "no-store" },
-  });
+  HttpServerResponse.text(
+    JSON.stringify({ type: "about:blank", title, status, detail, instance }),
+    {
+      status,
+      contentType: "application/problem+json; charset=utf-8",
+      headers: { "cache-control": "no-store" },
+    },
+  );
 
 const statusOf = (error: unknown) =>
   error instanceof Error && Schema.isSchema(error.constructor)
@@ -52,6 +57,13 @@ const problemFor = (error: unknown) =>
     const status = statusOf(error);
     if (Schema.is(PackageNotFound)(error))
       return problem(404, "Package not found", error.detail, instance);
+    if (status >= 500)
+      return problem(
+        status,
+        "Registry read failed",
+        "The skill bundle could not be read.",
+        instance,
+      );
     if (status === 401)
       return problem(
         401,
@@ -86,7 +98,11 @@ const currentPackage = Effect.gen(function* () {
     return yield* new PackageNotFound({ detail: `No app with the slug ${slug} is visible here.` });
   const bundle = yield* appSkillBundle({ app: app.id });
   const version = apmPackageVersion(bundle.revision);
-  const archive = gzipStored(tar(apmPackageFiles({ name: slug, version, skills: bundle.skills })));
+  // oxlint-disable-next-line executor/authored-code-through-adapter -- dynamic import
+  const yaml = (yield* Effect.promise(() => import("yaml"))).default;
+  const archive = gzipStored(
+    tar(apmPackageFiles({ yaml, name: slug, version, skills: bundle.skills })),
+  );
   const digest = new Uint8Array(
     yield* Effect.tryPromise(() => crypto.subtle.digest("SHA-256", archive)),
   );
@@ -143,7 +159,12 @@ const download = Effect.gen(function* () {
 });
 
 const serve = <E, R>(respond: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>) =>
-  withOrganizationRequest(() => respond, "discover").pipe(Effect.catch(problemFor));
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const token = request.headers.authorization?.match(/^Bearer ([^\s]+)$/i)?.[1];
+    if (token === undefined || !isApiKey(token)) return yield* problemFor(new Unauthorized());
+    return yield* withOrganizationRequest(() => respond, "discover").pipe(Effect.catch(problemFor));
+  });
 
 /** Mount beside the hosted API with the same request services; reads never change state. */
 export const apmRegistryRoutes = Layer.mergeAll(

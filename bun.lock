@@ -220,6 +220,7 @@
         "apps": "workspace:*",
         "better-auth": "1.7.16",
         "effect": "4.0.1",
+        "yaml": "2.9.1",
       },
     },
     "apps/hosted/testing": {
@@ -486,7 +487,7 @@
     },
     "packages/apps": {
       "name": "apps",
-      "version": "0.0.1-beta.120",
+      "version": "0.0.1-beta.122",
       "dependencies": {
         "@cfworker/json-schema": "4.1.1",
         "@csstools/css-tokenizer": "4.0.2",

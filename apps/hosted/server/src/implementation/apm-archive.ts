@@ -4,6 +4,7 @@
  * deflate blocks, so no compressor version can change a published digest.
  */
 import type { AppSkillSource } from "@executor-js/sdk/core";
+type Yaml = Pick<typeof import("yaml"), "parseDocument" | "isAlias" | "isMap" | "isScalar">;
 
 export interface ArchiveFile {
   readonly path: string;
@@ -12,22 +13,38 @@ export interface ArchiveFile {
 }
 
 /** Codex ignores `disable-model-invocation`; this policy file is its switch for the same thing. */
-export const codexHumanOnlyPolicy = "policy:\n  allow_implicit_invocation: false\n";
+const codexHumanOnlyPolicy = "policy:\n  allow_implicit_invocation: false\n";
 const codexPolicyPath = "agents/openai.yaml";
 
 const frontmatter = (document: string) =>
   /^﻿?---[ \t]*\r?\n([\s\S]*?)\r?\n---(?:[ \t]*\r?\n|[ \t]*$)/.exec(document)?.[1];
-/** A top-level YAML `true` (any of YAML's spellings), as Claude Code reads the key. */
-const humanOnly = (document: string) =>
-  /^disable-model-invocation:[ \t]*(?:true|True|TRUE|"true"|'true')[ \t]*(?:#.*)?\r?$/m.test(
-    frontmatter(document) ?? "",
-  );
+const humanOnly = (parser: Yaml, document: string) => {
+  const header = frontmatter(document);
+  if (header === undefined) return false;
+  const yaml = parser.parseDocument(header);
+  if (yaml.errors.length !== 0) return false;
+  const flag = yaml.get("disable-model-invocation", true);
+  const resolved = parser.isAlias(flag) ? flag.resolve(yaml) : flag;
+  return parser.isScalar(resolved) && resolved.value === true;
+};
+
+const codexPolicy = (parser: Yaml, original: string | undefined) => {
+  if (original === undefined) return codexHumanOnlyPolicy;
+  const yaml = parser.parseDocument(original);
+  if (yaml.errors.length !== 0) return codexHumanOnlyPolicy;
+  if (yaml.getIn(["policy", "allow_implicit_invocation"]) === false) return original;
+  if (!parser.isMap(yaml.contents)) return codexHumanOnlyPolicy;
+  if (!parser.isMap(yaml.get("policy", true))) yaml.set("policy", {});
+  yaml.setIn(["policy", "allow_implicit_invocation"], false);
+  return yaml.toString();
+};
 
 /**
  * The package as APM reads it: `apm.yml` at the root and each skill under `.apm/skills/<name>/`.
- * SKILL.md and every other file keep their exact text. A file that starts with `#!` is executable.
+ * SKILL.md keeps its exact text. A file that starts with `#!` is executable.
  */
 export const apmPackageFiles = (input: {
+  readonly yaml: Yaml;
   readonly name: string;
   readonly version: string;
   readonly skills: ReadonlyArray<AppSkillSource>;
@@ -41,17 +58,23 @@ export const apmPackageFiles = (input: {
   ];
   for (const skill of input.skills) {
     const directory = `.apm/skills/${skill.name}`;
-    for (const file of skill.files)
+    const document = skill.files.find((file) => file.path === "SKILL.md")?.content ?? "";
+    const explicitOnly = humanOnly(input.yaml, document);
+    for (const file of skill.files) {
+      if (explicitOnly && file.path === codexPolicyPath) continue;
       files.push({
         path: `${directory}/${file.path}`,
         content: file.content,
         executable: file.content.startsWith("#!"),
       });
-    const document = skill.files.find((file) => file.path === "SKILL.md")?.content ?? "";
-    if (humanOnly(document) && !skill.files.some((file) => file.path === codexPolicyPath))
+    }
+    if (explicitOnly)
       files.push({
         path: `${directory}/${codexPolicyPath}`,
-        content: codexHumanOnlyPolicy,
+        content: codexPolicy(
+          input.yaml,
+          skill.files.find((file) => file.path === codexPolicyPath)?.content,
+        ),
         executable: false,
       });
   }
