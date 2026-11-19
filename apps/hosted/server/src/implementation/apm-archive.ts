@@ -1,6 +1,6 @@
 /**
  * APM package archives built from one skill catalog. The bytes are a pure function of the
- * package name, the version and the skills: a tar with fixed metadata inside a gzip of stored
+ * package name and the skills: a tar with fixed metadata inside a gzip of stored
  * deflate blocks, so no compressor version can change a published digest.
  */
 import type { AppSkillSource } from "@executor-js/sdk/core";

@@ -1,10 +1,10 @@
 /**
  * The read half of APM's registry HTTP API v1 over an app's skill bundle. A package is
- * `{organization}/{app slug}`; its only version is the bundle's current revision. Bearer
+ * `{organization}/{app slug}`; its only version identifies the current archive. Bearer
  * authentication, the app policy and account resolution are the skill bundle route's own.
  */
 import { permittedAppIds } from "@executor-js/authorization";
-import { AppSlug } from "@executor-js/sdk/core";
+import { AppSlug, SkillDefinitionInvalid } from "@executor-js/sdk/core";
 import { UserFacingError } from "@executor-js/utils/user-facing-error";
 import { Effect, Layer, Schema, SchemaAST } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
@@ -49,6 +49,8 @@ const problemFor = (error: unknown) =>
     const status = statusOf(error);
     if (Schema.is(PackageNotFound)(error))
       return problem(404, "Package not found", error.detail, instance);
+    if (Schema.is(SkillDefinitionInvalid)(error))
+      return problem(400, "Invalid skill definition", error.message, instance);
     if (status >= 500)
       return problem(
         status,
