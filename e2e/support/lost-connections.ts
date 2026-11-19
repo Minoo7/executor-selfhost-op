@@ -387,16 +387,22 @@ let stagePool: Promise<Pool> | undefined;
  */
 const poolFor = (original: typeof fetch): Promise<Pool> =>
   (stagePool ??= (
-    (globalThis as Record<symbol, unknown>)[globalDispatcher] === undefined
+    nodeDispatcher() === undefined
       ? original("data:,").then((response) => response.arrayBuffer())
       : Promise.resolve()
   ).then(() => {
-    const global = (globalThis as Record<symbol, unknown>)[globalDispatcher] as {
+    const global = nodeDispatcher() as {
       constructor: new (options: { pipelining: number }) => Pool;
     };
     return new global.constructor({ pipelining: 0 });
   }));
-const globalDispatcher = Symbol.for("undici.globalDispatcher.1");
+const nodeDispatcher = () => {
+  const globals = globalThis as Record<symbol, unknown>;
+  return (
+    globals[Symbol.for("undici.globalDispatcher.2")] ??
+    globals[Symbol.for("undici.globalDispatcher.1")]
+  );
+};
 
 const tagged = (input: RequestInfo | URL, init: RequestInit | undefined, id: string) => {
   const headers = new Headers(input instanceof Request ? input.headers : undefined);
