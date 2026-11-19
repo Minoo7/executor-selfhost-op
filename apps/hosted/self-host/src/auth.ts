@@ -17,11 +17,12 @@ import {
   mcpConnectionStore,
   provisionHostedOAuthResources,
   provisionHostedConnectionResources,
-  ApiAuthentication,
+  BearerAuthentication,
   apiBearerAccess,
   callerSpanAttributes,
+  describeMcpAccess,
   mcpBearerAccess,
-  Authentication,
+  SessionAuthentication,
   AuthenticationUnavailable,
   sessionPrincipal,
   lookupMembership,
@@ -107,7 +108,7 @@ const fixedAuth = (
       yield* provisionHostedConnectionResources(origins, context, connection.id).pipe(
         Effect.mapError(() => new AuthenticationUnavailable()),
       );
-    const identity = Layer.succeed(Authentication, {
+    const identity = Layer.succeed(SessionAuthentication, {
       ...origins,
       oauthRedirectUri: Option.getOrUndefined(settings.oauthRedirectUri),
       current: (headers) =>
@@ -152,6 +153,8 @@ const fixedAuth = (
           try: () => auth.api.getMcpBrowserAccess({ headers, body: { id } }),
           catch: mcpBrowserGrantError,
         }),
+      describe: (access) =>
+        describeMcpAccess(access).pipe(Effect.provideService(SqlClient.SqlClient, sql)),
       metadata: Effect.tryPromise({
         try: () => auth.api.getOAuthServerConfig(),
         catch: () => new AuthenticationUnavailable(),
@@ -160,7 +163,7 @@ const fixedAuth = (
         Effect.tryPromise({ try: () => run(auth.api), catch: (cause) => cause }),
       ),
     });
-    const apiIdentity = Layer.succeed(ApiAuthentication, {
+    const apiIdentity = Layer.succeed(BearerAuthentication, {
       ...origins,
       authenticate: (headers, organization) =>
         apiBearerAccess(origins, { headers, organization }).pipe(
