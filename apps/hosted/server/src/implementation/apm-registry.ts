@@ -4,7 +4,7 @@
  * authentication, the app policy and account resolution are the skill bundle route's own.
  */
 import { permittedAppIds } from "@executor-js/authorization";
-import { AppSlug, type SkillRevision } from "@executor-js/sdk/core";
+import { AppSlug } from "@executor-js/sdk/core";
 import { UserFacingError } from "@executor-js/utils/user-facing-error";
 import { Effect, Layer, Schema, SchemaAST } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
@@ -17,14 +17,6 @@ import { isApiKey } from "./api-keys.ts";
 import { currentOwner } from "./access.ts";
 import { withOrganizationRequest } from "./organization.ts";
 import { appSkillBundle } from "./skills.ts";
-
-/**
- * Raise the minor number when the archive layout changes, so the same revision never names two
- * archives. `>=1.0.0` keeps selecting the newest one.
- */
-const archiveLayout = 0;
-const apmPackageVersion = (revision: typeof SkillRevision.Type) =>
-  `1.${archiveLayout}.0+${revision}`;
 
 const packages = "/apm/v1/packages/:organization/:repo/versions";
 
@@ -78,12 +70,12 @@ const problemFor = (error: unknown) =>
         "The credential may not read this organization or app's skills (it needs the discover permission on the app).",
         instance,
       );
-    const title = UserFacingError.is(error) ? error.title : "Registry read failed";
-    const detail = error instanceof Error ? error.message : "The skill bundle could not be read.";
-    return problem(status, title, detail, instance);
+    return UserFacingError.is(error)
+      ? problem(status, error.title, error.message, instance)
+      : problem(status, "Registry read failed", "The skill bundle could not be read.", instance);
   });
 
-/** The current package: the bundle's revision, its archive and when its version was deployed. */
+/** The build metadata identifies the exact archive bytes, including the serialization format. */
 const currentPackage = Effect.gen(function* () {
   const params = yield* HttpRouter.params;
   const identity = `${params.organization}/${params.repo}`;
@@ -97,17 +89,20 @@ const currentPackage = Effect.gen(function* () {
   if (app === undefined)
     return yield* new PackageNotFound({ detail: `No app with the slug ${slug} is visible here.` });
   const bundle = yield* appSkillBundle({ app: app.id });
-  const version = apmPackageVersion(bundle.revision);
   // oxlint-disable-next-line executor/authored-code-through-adapter -- dynamic import
   const yaml = (yield* Effect.promise(() => import("yaml"))).default;
-  const archive = gzipStored(
-    tar(apmPackageFiles({ yaml, name: slug, version, skills: bundle.skills })),
-  );
+  const archive = gzipStored(tar(apmPackageFiles({ yaml, name: slug, skills: bundle.skills })));
   const digest = new Uint8Array(
     yield* Effect.tryPromise(() => crypto.subtle.digest("SHA-256", archive)),
   );
   const deployed = yield* executor.apps.version({ owner, app: app.id, version: bundle.version });
-  return { identity, version, archive, digest, publishedAt: deployed.createdAt };
+  return {
+    identity,
+    version: `1.0.0+${hex(digest)}`,
+    archive,
+    digest,
+    publishedAt: deployed.createdAt,
+  };
 });
 
 const hex = (bytes: Uint8Array) =>

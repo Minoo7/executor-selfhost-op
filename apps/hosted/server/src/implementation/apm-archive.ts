@@ -46,13 +46,12 @@ const codexPolicy = (parser: Yaml, original: string | undefined) => {
 export const apmPackageFiles = (input: {
   readonly yaml: Yaml;
   readonly name: string;
-  readonly version: string;
   readonly skills: ReadonlyArray<AppSkillSource>;
 }): ArchiveFile[] => {
   const files: ArchiveFile[] = [
     {
       path: "apm.yml",
-      content: `name: ${input.name}\nversion: ${input.version}\n`,
+      content: `name: ${JSON.stringify(input.name)}\nversion: "1.0.0"\n`,
       executable: false,
     },
   ];
@@ -86,7 +85,7 @@ const blockSize = 512;
 
 const octal = (value: number, width: number) => `${value.toString(8).padStart(width - 1, "0")}\0`;
 
-const header = (name: string, size: number, mode: number, type: "0" | "x") => {
+const header = (name: string, size: number, mode: number, type: "0" | "5" | "x") => {
   const block = new Uint8Array(blockSize);
   const put = (offset: number, text: string) => block.set(encoder.encode(text), offset);
   put(0, name);
@@ -122,7 +121,7 @@ const fitsUstar = (path: string) => /^[\x20-\x7e]{1,100}$/.test(path);
 
 /** USTAR entries with zero owner and time, in the order given. */
 export const tar = (files: ReadonlyArray<ArchiveFile>) => {
-  const blocks: Uint8Array[] = [];
+  const blocks = [header(".apm/", 0, 0o755, "5")];
   for (const file of files) {
     const content = encoder.encode(file.content);
     const mode = file.executable ? 0o755 : 0o644;

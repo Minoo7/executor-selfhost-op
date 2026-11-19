@@ -2,12 +2,13 @@
 import { expect, layer } from "@effect/vitest";
 import { Effect, Redacted, Schema } from "effect";
 import { HttpClient } from "effect/http";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { scenarios } from "../test-plan.ts";
 import { HostedLive, withHostedCase } from "../support/case.ts";
 import { Actors } from "../support/actors.ts";
+import { connectionsPath, unlinkAccount } from "../support/app-accounts.ts";
 import { Api, body } from "../support/api.ts";
-import { App } from "../support/contracts.ts";
+import { App, Resource } from "../support/contracts.ts";
 import { Target } from "../support/platform.ts";
 import { targetHosts } from "../support/role-hosts.ts";
 import { skillUpstream } from "../support/skill-upstream.ts";
@@ -66,7 +67,7 @@ layer(HostedLive, { excludeTestServices: true })("APM registry", (it) => {
         const upstream = yield* skillUpstream;
         const prefix = `/api/organizations/${actors.organization.id}/apps`;
         const deployed = yield* api.request(actors.owner, "POST", `${prefix}/deploy`, {
-          name: `APM skills ${randomUUID().slice(0, 8)}`,
+          name: "2026",
           files: [
             {
               path: "index.ts",
@@ -97,6 +98,7 @@ export default defineApp({}, async (ctx) => ({
         });
         expect(deployed.status, JSON.stringify(deployed.body)).toBe(200);
         const app = yield* body(App, deployed);
+        expect(app.slug).toBe("2026");
         yield* Effect.addFinalizer(() =>
           api.request(actors.owner, "DELETE", `${prefix}/${app.id}`).pipe(Effect.orDie),
         );
@@ -112,8 +114,8 @@ export default defineApp({}, async (ctx) => ({
           });
         const listed = Effect.gen(function* () {
           const response = yield* get("/versions");
-          expect(response.status).toBe(200);
           const json: unknown = yield* response.json;
+          expect(response.status, JSON.stringify(json)).toBe(200);
           return yield* Schema.decodeUnknownEffect(Versions)(json);
         });
         const archive = (version: string) =>
@@ -131,15 +133,13 @@ export default defineApp({}, async (ctx) => ({
         expect(first.versions).toHaveLength(1);
         const [current] = first.versions;
         if (current === undefined) return yield* Effect.fail(new Error("No version listed"));
-        expect(current.version).toMatch(/^1\.0\.0\+[0-9a-f]{64}$/);
+        expect(current.version).toBe(`1.0.0+${current.digest.slice("sha256:".length)}`);
         const bytes = yield* archive(current.version);
         expect(sha256(bytes)).toBe(current.digest);
         expect(bytes.length).toBe(current.size_bytes);
         expect(sha256(yield* archive(current.version))).toBe(current.digest);
         const files = untar(yield* decompress(bytes));
-        expect(files.get("apm.yml")?.content).toBe(
-          `name: ${app.slug}\nversion: ${current.version}\n`,
-        );
+        expect(files.get("apm.yml")?.content).toBe(`name: "${app.slug}"\nversion: "1.0.0"\n`);
         expect(files.get(".apm/skills/human-only/SKILL.md")).toEqual({
           content: humanOnly,
           mode: 0o644,
@@ -196,6 +196,129 @@ export default defineApp({}, async (ctx) => ({
         );
         expect(missing.status).toBe(404);
         expect(missing.headers["content-type"]).toContain("application/problem+json");
+        const otherOrganization = yield* http.get(
+          `${targetHosts(target).deployment}/apm/v1/packages/org_other/${app.slug}/versions`,
+          { headers: { authorization: `Bearer ${token}` } },
+        );
+        expect(otherOrganization.status).toBe(403);
+
+        const cleared = yield* api.request(actors.owner, "POST", `${prefix}/${app.id}/deploy`, {
+          files: [
+            {
+              path: "index.ts",
+              content:
+                'import { defineApp, dynamicSkills } from "apps"; export default defineApp({}, async () => ({ dynamicSkills: dynamicSkills({ list: () => [] }) }));',
+            },
+            appsManifest,
+          ],
+        });
+        expect(cleared.status, JSON.stringify(cleared.body)).toBe(200);
+        const empty = (yield* listed).versions[0];
+        if (empty === undefined) return yield* Effect.fail(new Error("No empty version listed"));
+        expect(empty.version).not.toBe(next.version);
+        const emptyTar = yield* decompress(yield* archive(empty.version));
+        expect(new TextDecoder().decode(emptyTar.subarray(0, 5))).toBe(".apm/");
+        expect(String.fromCharCode(emptyTar[156] ?? 0)).toBe("5");
+        expect([...untar(emptyTar).keys()]).toEqual(["apm.yml"]);
+      }),
+    ),
+  );
+
+  it.effect(scenarios.apmRegistryAccess.title, (context) =>
+    withHostedCase(
+      context,
+      Effect.gen(function* () {
+        const api = yield* Api,
+          actors = yield* Actors,
+          target = yield* Target,
+          http = yield* HttpClient.HttpClient;
+        const prefix = `/api/organizations/${actors.organization.id}`;
+        const deployed = yield* api.request(actors.owner, "POST", `${prefix}/apps/deploy`, {
+          name: "Account-linked skills",
+          files: [
+            {
+              path: "index.ts",
+              content: `import { defineApp, defineProvider, dynamicSkills, object, secrets, string } from "apps";
+const service = defineProvider({ name: "Registry account", auth: { key: secrets({ label: "Key", fields: object({ token: string() }) }) } });
+export default defineApp({ user: { accounts: { service } } }, async () => ({
+  dynamicSkills: dynamicSkills({ list: () => [] }),
+}));`,
+            },
+            { path: "skills/human-only/SKILL.md", content: humanOnly },
+            appsManifest,
+          ],
+        });
+        expect(deployed.status, JSON.stringify(deployed.body)).toBe(200);
+        const app = yield* body(App, deployed);
+        const appPath = `${prefix}/apps/${app.id}`;
+        const access = Schema.Struct({ revision: Schema.String });
+        const setAudience = (kind: "everyone" | "private") =>
+          Effect.gen(function* () {
+            const { revision } = yield* body(
+              access,
+              yield* api.request(actors.owner, "GET", `${appPath}/access`),
+            );
+            const result = yield* api.request(actors.owner, "PATCH", `${appPath}/access`, {
+              revision,
+              audience: { kind },
+            });
+            expect(result.status, JSON.stringify(result.body)).toBe(200);
+          });
+
+        yield* setAudience("everyone");
+        const connection = yield* api.request(
+          actors.member,
+          "POST",
+          connectionsPath(appPath, "user", "service"),
+          { destination: { kind: "personal" } },
+        );
+        expect(connection.status, JSON.stringify(connection.body)).toBe(200);
+        const { id: pending } = yield* body(Resource, connection);
+        const saved = yield* api.request(
+          actors.member,
+          "POST",
+          `${prefix}/connections/${pending}/submit`,
+          {
+            method: "key",
+            label: "Member's registry account",
+            fields: { token: "synthetic-registry-token" },
+          },
+        );
+        expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+        const account = yield* body(Resource, saved);
+        const key = yield* api.request(actors.member, "POST", "/api/auth/api-key/create", {
+          name: "Member registry reader",
+        });
+        expect(key.status).toBe(200);
+        const token = Redacted.value((yield* body(Key, key)).key);
+        const base = `${targetHosts(target).deployment}/apm/v1/packages/${actors.organization.id}/${app.slug}/versions`;
+        const get = (suffix: string) =>
+          http.get(`${base}${suffix}`, {
+            headers: { authorization: `Bearer ${token}` },
+          });
+        const listed = yield* get("");
+        const json: unknown = yield* listed.json;
+        expect(listed.status, JSON.stringify(json)).toBe(200);
+        const version = (yield* Schema.decodeUnknownEffect(Versions)(json)).versions[0];
+        if (version === undefined) return yield* Effect.fail(new Error("No member version listed"));
+        const archivePath = `/${encodeURIComponent(version.version)}/download`;
+        const allowed = yield* get(archivePath);
+        expect(allowed.status).toBe(200);
+        yield* allowed.arrayBuffer;
+
+        yield* unlinkAccount(actors.member, appPath, "service", account.id);
+        for (const suffix of ["", archivePath]) {
+          const refused = yield* get(suffix);
+          expect(refused.status).toBe(409);
+          yield* refused.text;
+        }
+
+        yield* setAudience("private");
+        for (const suffix of ["", archivePath]) {
+          const refused = yield* get(suffix);
+          expect(refused.status).toBe(403);
+          yield* refused.text;
+        }
       }),
     ),
   );
