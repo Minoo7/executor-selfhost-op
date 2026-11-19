@@ -29,6 +29,7 @@ import { Evidence } from "../support/evidence.ts";
 import { legacyStorage } from "../support/legacy-storage.ts";
 import {
   beforeAppAccounts,
+  beforeHostedAccountLinks,
   beforeProfileRemoval,
   profileAppCopiesPending,
 } from "../support/profile-removal-rollback.ts";
@@ -312,8 +313,7 @@ const upgradeFixture = (
       return [
         { sql: "SELECT migration_id, name FROM private_hosted_migrations ORDER BY migration_id" },
         ...beforeAppAccounts(),
-        { sql: "DELETE FROM private_hosted_migrations WHERE migration_id = 9" },
-        { sql: "DROP TABLE hosted_app_account_links" },
+        ...beforeHostedAccountLinks,
         ...beforeProfileRemoval(),
         ...profileAppCopiesPending("private_hosted"),
         { sql: `UPDATE private_executor_settings SET value = '4.0.12' WHERE key = 'version'` },
@@ -509,7 +509,7 @@ layer(HostedLive, { excludeTestServices: true })("Legacy profile schedules", (it
         );
         expect(
           recorded?.map((row) => row.name),
-          "step 9 is the latest hosted step",
+          "step 9 was recorded before the rewind",
         ).toContain("app_account_links");
         yield* serverControl("start");
 
@@ -746,7 +746,7 @@ layer(HostedLive, { excludeTestServices: true })("Legacy profile schedules", (it
         );
         expect(
           recorded?.map((row) => row.name),
-          "step 9 is the latest hosted step",
+          "step 9 was recorded before the rewind",
         ).toContain("app_account_links");
         yield* serverControl("start");
 

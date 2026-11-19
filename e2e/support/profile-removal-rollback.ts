@@ -71,3 +71,12 @@ export const beforeAppAccounts = (): ReadonlyArray<{ readonly sql: string }> => 
   },
   { sql: `UPDATE private_executor_settings SET value = '4.0.13' WHERE key = 'version'` },
 ];
+
+/** Rewind the hosted ledger and schema to the input of the profile-to-links migration. */
+export const beforeHostedAccountLinks = [
+  {
+    sql: "DELETE FROM private_hosted_migrations WHERE migration_id >= 9 RETURNING migration_id",
+  },
+  { sql: "DROP TABLE hosted_org_mcp_instructions" },
+  { sql: "DROP TABLE hosted_app_account_links" },
+];
