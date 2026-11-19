@@ -64,12 +64,13 @@ export const skillHumanOnly = (frontmatter: string): SkillHumanOnly => {
     return { kind: "locked", enabled: false, reason: "SKILL.md has no frontmatter." };
   const document = parseDocument(yaml);
   const root = document.contents;
-  if (document.errors.length > 0 || !isMap(root) || root.flow)
+  if (document.errors.length > 0 || !isMap(root))
     return { kind: "locked", enabled: false, reason: unusual };
   const pair = root.items.find((item) => isScalar(item.key) && item.key.value === humanOnlyKey);
   const key = pair?.key;
   const value = pair?.value;
   const enabled = isScalar(value) && value.value === true;
+  if (root.flow) return { kind: "locked", enabled, reason: unusual };
   if (pair !== undefined && !(isScalar(value) && typeof value.value === "boolean"))
     return {
       kind: "locked",
@@ -84,17 +85,24 @@ export const skillHumanOnly = (frontmatter: string): SkillHumanOnly => {
     if (!enabled) return { from: value.range[0], to: value.range[1], text: "true" };
     const start = key.range[0];
     const end = yaml.indexOf("\n", value.range[1]);
-    if (start !== yaml.lastIndexOf("\n", start - 1) + 1 || yaml.slice(start, value.range[1]).includes("\n"))
+    if (
+      start !== yaml.lastIndexOf("\n", start - 1) + 1 ||
+      yaml.slice(start, value.range[1]).includes("\n")
+    )
       return undefined;
     if (end !== -1) return { from: start, to: end + 1, text: "" };
     const previous = yaml.slice(0, start).match(/\r?\n$/)?.[0].length;
-    return previous === undefined ? undefined : { from: start - previous, to: yaml.length, text: "" };
+    return previous === undefined
+      ? undefined
+      : { from: start - previous, to: yaml.length, text: "" };
   };
   const change = edit();
   if (change === undefined) return { kind: "locked", enabled, reason: unusual };
   const offset = opening[0].length;
   const toggled =
-    frontmatter.slice(0, offset + change.from) + change.text + frontmatter.slice(offset + change.to);
+    frontmatter.slice(0, offset + change.from) +
+    change.text +
+    frontmatter.slice(offset + change.to);
   return changesOnlyTheKey(document, toggled, !enabled)
     ? { kind: "editable", enabled, toggled }
     : { kind: "locked", enabled, reason: unusual };
@@ -106,16 +114,20 @@ const changesOnlyTheKey = (original: Document, toggled: string, enabled: boolean
   if (yaml === undefined) return false;
   const reparsed = parseDocument(yaml);
   if (reparsed.errors.length > 0) return false;
-  const values: unknown = original.toJS();
-  if (typeof values !== "object" || values === null || Array.isArray(values)) return false;
-  const others = Object.entries(values).filter(([key]) => key !== humanOnlyKey);
-  const expected = Object.fromEntries(
-    enabled
-      ? humanOnlyKey in values
-        ? Object.entries(values).map(([key, value]) => [key, key === humanOnlyKey ? true : value])
-        : [...others, [humanOnlyKey, true]]
-      : others,
-  );
-  // An alias of the flag would change with it, so it fails this comparison.
-  return JSON.stringify(reparsed.toJS()) === JSON.stringify(expected);
+  try {
+    const values: unknown = original.toJS();
+    if (typeof values !== "object" || values === null || Array.isArray(values)) return false;
+    const others = Object.entries(values).filter(([key]) => key !== humanOnlyKey);
+    const expected = Object.fromEntries(
+      enabled
+        ? humanOnlyKey in values
+          ? Object.entries(values).map(([key, value]) => [key, key === humanOnlyKey ? true : value])
+          : [...others, [humanOnlyKey, true]]
+        : others,
+    );
+    // An alias of the flag would change with it, so it fails this comparison.
+    return JSON.stringify(reparsed.toJS()) === JSON.stringify(expected);
+  } catch {
+    return false;
+  }
 };

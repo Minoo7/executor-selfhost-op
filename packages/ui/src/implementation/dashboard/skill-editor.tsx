@@ -110,9 +110,9 @@ export function HumanOnlyField({
   reason,
 }: {
   readonly checked: boolean;
-  readonly onCheckedChange?: (checked: boolean) => void;
+  readonly onCheckedChange?: ((checked: boolean) => void) | undefined;
   /** Why the value cannot change here. */
-  readonly reason?: string;
+  readonly reason?: string | undefined;
 }) {
   const note = useId();
   return (

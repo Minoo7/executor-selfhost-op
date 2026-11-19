@@ -72,7 +72,17 @@ const locked = [
   {
     name: "flow-map",
     title: "Flow map",
-    content: "---\n{ name: flow-map, description: One flow mapping. }\n---\n\n# Flow map\n",
+    content:
+      "---\n{ name: flow-map, description: One flow mapping, disable-model-invocation: true }\n---\n\n# Flow map\n",
+    enabled: true,
+    reason: "This frontmatter is too unusual to change one line safely. Edit SKILL.md instead.",
+  },
+  {
+    name: "aliased-true",
+    title: "Aliased true",
+    content:
+      "---\nname: aliased-true\ndescription: An alias repeats the flag.\ndisable-model-invocation: &flag true\nx-repeated: *flag\n---\n\n# Aliased true\n",
+    enabled: true,
     reason: "This frontmatter is too unusual to change one line safely. Edit SKILL.md instead.",
   },
 ] as const;
@@ -155,9 +165,9 @@ const skillsTab = (label: string, skills: readonly { path: string; content: stri
           page.getByRole("button", { name: "Discard", exact: true }).waitFor({ state: "hidden" }),
         );
         const saved = yield* workspace();
-        expect(
-          saved.files.find((file) => file.path === `skills/${name}/SKILL.md`)?.content,
-        ).toBe(expected);
+        expect(saved.files.find((file) => file.path === `skills/${name}/SKILL.md`)?.content).toBe(
+          expected,
+        );
         yield* api.request(actors.owner, "GET", `${path}/source`).pipe(
           Effect.flatMap((response) => body(Running, response)),
           Effect.filterOrFail(
@@ -231,7 +241,10 @@ layer(HostedLive, { excludeTestServices: true })("Skill human-only control", (it
         }
         for (const skill of locked) {
           yield* tab.open(skill.name, skill.title);
-          expect(yield* tab.state(`${skill.name} cannot change`)).toEqual([false, true]);
+          expect(yield* tab.state(`${skill.name} cannot change`)).toEqual([
+            "enabled" in skill && skill.enabled,
+            true,
+          ]);
           yield* tab.browser.use(`${skill.name} explains why`, (page) =>
             page.getByText(skill.reason, { exact: true }).waitFor(),
           );
