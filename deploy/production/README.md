@@ -72,3 +72,27 @@ verified named volumes or saved host configuration.
 Commit and review configuration changes on this branch. Trigger Portainer's
 manual pull/redeploy only after approval. Pin every image update to a verified
 digest and keep the data-backup/rollback procedure appropriate to that release.
+
+## App UI route sync
+
+The `app-routes` service checks Executor every 60 seconds and writes the TSDProxy list for apps whose UI endpoint is ready. It uses the URL returned by Executor and keeps the existing file when a check fails or would remove every route. The API key has full authority.
+
+Before starting the service, create the host prerequisites:
+
+- Create `/opt/tsdproxy/config/executor-apps` and seed `/opt/tsdproxy/config/executor-apps/proxies.yaml` with `{}`. TSDProxy refuses to start when a registered list file is missing.
+- Create `/opt/executor/app-routes/api-key` with the production API key and mode `0600`.
+
+Add this entry to the `lists:` map in `/opt/tsdproxy/config/tsdproxy.yaml`, next to the existing `local` entry, then restart TSDProxy once:
+
+```yaml
+lists:
+  executor-apps:
+    filename: /config/executor-apps/proxies.yaml
+    defaultProxyProvider: owner-shared
+```
+
+The `granola-workspace` labels on the Tailscale sidecar stay for now. TSDProxy rejects the second registration of a domain, so they are inert while the job's route exists. Removing them recreates the sidecar and restarts Executor, so remove them with the next image update.
+
+The script lives inline in `compose.yaml` because Portainer cannot bind-mount files from its Git clone. A hostname that Executor returns outside `*.executor.apps.planasolutions.ai` is skipped and logged.
+
+For cutover, remove the hand-written `*.executor.apps.planasolutions.ai` entries from `/opt/tsdproxy/config/proxies.yaml` before the job's first write. This prevents two list sources from declaring the same domain. To roll back, stop `executor-app-routes` and restore the hand-written entries.
