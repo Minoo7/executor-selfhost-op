@@ -1,0 +1,285 @@
+services:
+  app-routes:
+    image: python:3.12-alpine@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+    container_name: executor-app-routes
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      EXECUTOR_URL: http://127.0.0.1:4400
+      EXECUTOR_ORGANIZATION: executor
+      REQUIRED_HOSTNAME_SUFFIX: .executor.apps.planasolutions.ai
+      ROUTE_TARGET: http://127.0.0.1:4400
+      PROXY_PROVIDER: owner-shared
+      DNS_TARGET: 100.87.129.61
+      INTERVAL_SECONDS: "60"
+      MAX_ROUTES: "30"
+    volumes:
+      - /opt/tsdproxy/config/executor-apps:/routes
+      - /opt/executor/app-routes/api-key:/run/secrets/executor-api-key:ro
+    configs:
+      - source: app-routes-script
+        target: /usr/local/bin/app-routes.py
+    command: ["python", "/usr/local/bin/app-routes.py"]
+    cpus: 0.25
+    mem_limit: 64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+configs:
+  app-routes-script:
+    content: |
+      import argparse
+      import json
+      import logging
+      import os
+      import re
+      import sys
+      import tempfile
+      import time
+      from collections import namedtuple
+      from pathlib import Path
+      from urllib.error import HTTPError, URLError
+      from urllib.parse import urlsplit
+      from urllib.request import Request, urlopen
+
+      Route = namedtuple("Route", ["name", "domain"])
+      UiResult = namedtuple("UiResult", ["app", "location"])
+
+      log = logging.getLogger("app-routes")
+
+
+      def route_name(domain):
+          labels = domain.split(".")
+          return labels[0] + "-" + labels[1] + "-app"
+
+
+      def accepted_domain(url, suffix):
+          try:
+              parsed = urlsplit(url)
+              host = parsed.hostname
+          except ValueError:
+              return None
+          if (
+              parsed.scheme != "https"
+              or host is None
+              or parsed.netloc != host
+              or parsed.path
+              or parsed.query
+              or parsed.fragment
+              or parsed.username is not None
+              or parsed.password is not None
+              or not re.fullmatch(r"[a-z0-9-]+(?:\.[a-z0-9-]+)*", host)
+              or not host.endswith(suffix)
+              or host[: -len(suffix)].count(".")
+              or not host[: -len(suffix)]
+          ):
+              return None
+          return host
+
+
+      def route_for(result, suffix):
+          location = result.location
+          if not isinstance(location, dict) or location.get("status") != "ready":
+              return None
+          url = location.get("url")
+          if not isinstance(url, str):
+              return None
+          domain = accepted_domain(url, suffix)
+          if domain is None:
+              return None
+          name = route_name(domain)
+          if len(name) > 63:
+              return None
+          return Route(name, domain)
+
+
+      def routes_from_results(results, suffix):
+          routes = [route for result in results if (route := route_for(result, suffix)) is not None]
+          return sorted(set(routes), key=lambda route: route.name)
+
+
+      def render_routes(routes, target, provider, dns_target):
+          blocks = []
+          for route in sorted(routes, key=lambda item: item.name):
+              blocks.append(
+                  "\n".join(
+                      [
+                          route.name + ":",
+                          "  proxyProvider: " + provider,
+                          "  domain: " + route.domain,
+                          "  dnsTarget: " + dns_target,
+                          "  ports:",
+                          "    443/https:",
+                          "      targets:",
+                          "      - " + target,
+                      ]
+                  )
+              )
+          return "\n".join(blocks) + ("\n" if blocks else "{}\n")
+
+
+      def read_json(request, timeout):
+          with urlopen(request, timeout=timeout) as response:
+              return json.load(response)
+
+
+      def api_json(url, api_key, timeout):
+          request = Request(url, headers={"Authorization": "Bearer " + api_key, "Accept": "application/json"})
+          return read_json(request, timeout)
+
+
+      def is_normal_not_deployed(error):
+          if error.code != 409:
+              return False
+          try:
+              body = json.load(error)
+          except (ValueError, OSError):
+              return False
+          return isinstance(body, dict) and "AppNotDeployed" in (body.get("_tag"), body.get("code"))
+
+
+      def fetch_results(settings, api_key):
+          base = settings["executor_url"].rstrip("/")
+          apps = api_json(
+              base + "/api/organizations/" + settings["organization"] + "/apps",
+              api_key,
+              settings["timeout"],
+          )
+          if not isinstance(apps, list):
+              raise RuntimeError("app list was not a JSON array")
+          results = []
+          for app in apps:
+              if not isinstance(app, dict) or not isinstance(app.get("id"), str):
+                  raise RuntimeError("app list contained an invalid app")
+              try:
+                  location = api_json(
+                      base
+                      + "/api/organizations/"
+                      + settings["organization"]
+                      + "/apps/"
+                      + app["id"]
+                      + "/ui",
+                      api_key,
+                      settings["timeout"],
+                  )
+              except HTTPError as error:
+                  if is_normal_not_deployed(error):
+                      continue
+                  raise RuntimeError("UI lookup failed") from error
+              except (URLError, OSError, ValueError) as error:
+                  raise RuntimeError("UI lookup failed") from error
+              if not isinstance(location, dict):
+                  raise RuntimeError("UI lookup was not a JSON object")
+              if location.get("status") == "unavailable" and location.get("reason") in {
+                  "no_ui",
+                  "no_app_domain",
+              }:
+                  continue
+              if location.get("status") != "ready":
+                  raise RuntimeError("UI lookup returned an unexpected status")
+              results.append(UiResult(app, location))
+          return results
+
+
+      def current_names(path):
+          try:
+              text = path.read_text()
+          except FileNotFoundError:
+              return set(), ""
+          if text.strip() in ("", "{}"):
+              return set(), text
+          return set(re.findall(r"(?m)^([A-Za-z0-9][A-Za-z0-9-]*):(?:\n|\Z)", text, re.MULTILINE)), text
+
+
+      def write_if_changed(path, rendered, current):
+          if rendered == current:
+              return False
+          path.parent.mkdir(parents=True, exist_ok=True)
+          with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as temp:
+              temp.write(rendered)
+              temp_path = Path(temp.name)
+          os.chmod(temp_path, 0o600)
+          os.replace(temp_path, path)
+          return True
+
+
+      def run_once(settings, dry_run=False):
+          api_key = Path(settings["api_key_file"]).read_text(encoding="utf-8").strip()
+          results = fetch_results(settings, api_key)
+          routes = routes_from_results(results, settings["suffix"])
+          skipped = sum(1 for result in results if route_for(result, settings["suffix"]) is None)
+          if skipped:
+              log.warning(json.dumps({"event": "app_routes_skipped_invalid_hostname", "count": skipped}))
+          if len(routes) > settings["max_routes"]:
+              raise RuntimeError("route count exceeds maximum")
+          rendered = render_routes(routes, settings["target"], settings["provider"], settings["dns_target"])
+          path = Path(settings["routes_file"])
+          old_names, current = current_names(path)
+          if not routes and old_names:
+              raise RuntimeError("refused to replace non-empty routes with an empty result")
+          new_names = {route.name for route in routes}
+          changed = False if dry_run else write_if_changed(path, rendered, current)
+          log.info(
+              json.dumps(
+                  {
+                      "event": "app_routes_sync",
+                      "route_count": len(routes),
+                      "added": len(new_names - old_names),
+                      "removed": len(old_names - new_names),
+                  },
+                  sort_keys=True,
+              )
+          )
+          if dry_run:
+              sys.stdout.write(rendered)
+          return changed
+
+
+      def settings_from_environment():
+          return {
+              "executor_url": os.environ.get("EXECUTOR_URL", "http://127.0.0.1:4400"),
+              "organization": os.environ.get("EXECUTOR_ORGANIZATION", "executor"),
+              "suffix": os.environ.get("REQUIRED_HOSTNAME_SUFFIX", ".executor.apps.planasolutions.ai"),
+              "target": os.environ.get("ROUTE_TARGET", "http://127.0.0.1:4400"),
+              "provider": os.environ.get("PROXY_PROVIDER", "owner-shared"),
+              "dns_target": os.environ.get("DNS_TARGET", "100.87.129.61"),
+              "interval": int(os.environ.get("INTERVAL_SECONDS", "60")),
+              "max_routes": int(os.environ.get("MAX_ROUTES", "30")),
+              "timeout": float(os.environ.get("HTTP_TIMEOUT_SECONDS", "10")),
+              "api_key_file": os.environ.get("API_KEY_FILE", "/run/secrets/executor-api-key"),
+              "routes_file": os.environ.get("ROUTES_FILE", "/routes/proxies.yaml"),
+          }
+
+
+      def main():
+          parser = argparse.ArgumentParser()
+          parser.add_argument("--once", action="store_true")
+          parser.add_argument("--dry-run", action="store_true")
+          args = parser.parse_args()
+          logging.basicConfig(level=logging.INFO, format="%(message)s")
+          settings = settings_from_environment()
+          if args.dry_run:
+              try:
+                  run_once(settings, dry_run=True)
+                  return 0
+              except Exception as error:
+                  log.error("app route sync refused: %s", error)
+                  return 1
+          if args.once:
+              try:
+                  run_once(settings)
+                  return 0
+              except Exception as error:
+                  log.error("app route sync refused: %s", error)
+                  return 1
+          while True:
+              try:
+                  run_once(settings)
+              except Exception as error:
+                  log.error("app route sync failed: %s", error)
+              time.sleep(settings["interval"])
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
