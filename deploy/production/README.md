@@ -75,7 +75,7 @@ digest and keep the data-backup/rollback procedure appropriate to that release.
 
 ## App UI route sync
 
-The `app-routes` service checks Executor every 60 seconds and writes the TSDProxy list for apps whose UI endpoint is ready. It uses the URL returned by Executor and keeps the existing file when a check fails or would remove every route. The API key has full authority.
+The `executor-app-routes` stack runs from `deploy/production/app-routes.compose.yaml`. It is a separate Portainer stack, so deploying or removing it never recreates Executor. Its `app-routes` service checks Executor every 60 seconds and writes the TSDProxy list for apps whose UI endpoint is ready. It uses the URL returned by Executor and keeps the existing file when a check fails or would remove every route. The API key has full authority.
 
 Before starting the service, create the host prerequisites:
 
@@ -93,6 +93,8 @@ lists:
 
 The `granola-workspace` labels on the Tailscale sidecar stay for now. TSDProxy rejects the second registration of a domain, so they are inert while the job's route exists. Removing them recreates the sidecar and restarts Executor, so remove them with the next image update.
 
-The script lives inline in `compose.yaml` because Portainer cannot bind-mount files from its Git clone. A hostname that Executor returns outside `*.executor.apps.planasolutions.ai` is skipped and logged.
+The script lives inline in `app-routes.compose.yaml` because Portainer cannot bind-mount files from its Git clone. A hostname that Executor returns outside `*.executor.apps.planasolutions.ai` is skipped and logged.
 
-For cutover, remove the hand-written `*.executor.apps.planasolutions.ai` entries from `/opt/tsdproxy/config/proxies.yaml` before the job's first write. This prevents two list sources from declaring the same domain. To roll back, stop `executor-app-routes` and restore the hand-written entries.
+For cutover, remove the hand-written `*.executor.apps.planasolutions.ai` entries from `/opt/tsdproxy/config/proxies.yaml` before the job's first write. This prevents two list sources from declaring the same domain. To roll back, stop the `executor-app-routes` stack and restore the hand-written entries.
+
+The service uses host networking to reach Executor on `127.0.0.1:4400`. Its root filesystem is writable because Compose copies an inline config into the container.
