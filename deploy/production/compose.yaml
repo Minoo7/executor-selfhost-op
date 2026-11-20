@@ -18,6 +18,12 @@ services:
       - NET_RAW
     ports:
       - 127.0.0.1:4400:4400
+    labels:
+      tsdproxy.enable: "true"
+      tsdproxy.name: granola-workspace
+      tsdproxy.domain: granola-workspace.executor.apps.planasolutions.ai
+      tsdproxy.dnstarget: 100.87.129.61
+      tsdproxy.port.1: "443/https:4400/http"
     pull_policy: never
   app-routes:
     image: python:3.12-alpine@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89

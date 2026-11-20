@@ -91,6 +91,8 @@ lists:
     defaultProxyProvider: owner-shared
 ```
 
+The `granola-workspace` labels on the Tailscale sidecar stay for now. TSDProxy rejects the second registration of a domain, so they are inert while the job's route exists. Removing them recreates the sidecar and restarts Executor, so remove them with the next image update.
+
 The script lives inline in `compose.yaml` because Portainer cannot bind-mount files from its Git clone. A hostname that Executor returns outside `*.executor.apps.planasolutions.ai` is skipped and logged.
 
 For cutover, remove the hand-written `*.executor.apps.planasolutions.ai` entries from `/opt/tsdproxy/config/proxies.yaml` before the job's first write. This prevents two list sources from declaring the same domain. To roll back, stop `executor-app-routes` and restore the hand-written entries.
