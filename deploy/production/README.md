@@ -5,8 +5,11 @@ Portainer deploys this Compose file from `Minoo7/executor-selfhost-op`, branch
 Compose configuration. Portainer owns deployments and environment inputs.
 Automatic updates and webhooks stay disabled.
 
-The image is pinned to the qualified ARM64 beta40 digest. It contains upstream
-runtime behavior plus organization MCP instructions and safe skill deletion.
+The image is pinned to the qualified ARM64 beta.64 digest built from
+`fix/effect-config-error-message` (87c3d8c5). It contains upstream runtime
+behavior, organization MCP instructions, safe skill deletion, the APM registry,
+and the Effect `ConfigError` formatting patch. The beta.40 digest
+`sha256:1a69258c…31d28` stays on the host for rollback.
 Changing this file does not rebuild the image or deploy it automatically.
 
 ## Required Portainer environment
