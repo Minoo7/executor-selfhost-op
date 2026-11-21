@@ -65,8 +65,14 @@ export type HostedOAuthOrigins = Pick<GrantOAuthOptions, "origin" | "resourceOri
 
 export type { RefreshRejection };
 
-/** What a host observes about grants: why a refresh was refused and which grants were approved. */
-export type GrantObservers = Pick<GrantOAuthOptions, "onRefreshRejected" | "onGrantCreated">;
+/**
+ * What a host observes about grants (why a refresh was refused and which grants were approved), and
+ * how it binds grants for legacy MCP URLs it serves.
+ */
+export type GrantObservers = Pick<
+  GrantOAuthOptions,
+  "onRefreshRejected" | "onGrantCreated" | "resolveResource"
+>;
 
 /** The hosted grant's origins plus the host's grant observers. */
 export type HostedOAuthOptions = HostedOAuthOrigins &
@@ -82,6 +88,7 @@ const hostedGrantOAuth = ({
   issuer,
   onRefreshRejected,
   onGrantCreated,
+  resolveResource,
   ...policy
 }: HostedOAuthOptions) =>
   grantOAuthPlugins({
@@ -91,6 +98,7 @@ const hostedGrantOAuth = ({
     issuer,
     onRefreshRejected,
     onGrantCreated,
+    resolveResource,
     scopes: ["mcp", "executor", "offline_access"],
     // The CLI signs in on machines without a browser, approving on the dashboard's device page.
     deviceAuthorization: true,
@@ -130,6 +138,8 @@ export const PatGrant = Schema.Struct({
   token: ApiKeyId,
   organization: OrganizationId,
   mode: ApprovalMode,
+  /** The connection a host narrowed the token to for one URL (Cloud's v1 toolkit URLs). */
+  connection: Schema.optionalKey(ConnectionId),
 });
 const patGrantPrefix = "pat:";
 /** The PAT a synthetic grant ID names, or none for an OAuth grant ID. */

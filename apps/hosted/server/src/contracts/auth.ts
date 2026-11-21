@@ -1,6 +1,6 @@
 import { UserFacingError } from "@executor-js/utils/user-facing-error";
 import type { ApiKeyId } from "./api-keys.ts";
-import type { ResourceOrigins } from "@executor-js/mcp-auth";
+import type { GrantId, ResourceOrigins } from "@executor-js/mcp-auth";
 import type { AuthorizationPolicy } from "@executor-js/authorization";
 import type { OrganizationAccess, OrganizationReference } from "./organization.ts";
 import { CurrentActor } from "@executor-js/sdk/core";
@@ -27,10 +27,9 @@ export const Principal = Schema.Struct({
 });
 export type Principal = typeof Principal.Type;
 
-/** No valid hosted session was supplied. */
-export const Unauthorized = UserFacingError.define({
-  tag: "Unauthorized",
-  status: 401,
+const unknownApiKeyDescription =
+  "This Executor API key was revoked, has expired or does not exist; unless Executor restores access by itself, create a new token on the Tokens page and connect it to the account that uses this key.";
+const signInRequired = {
   title: "Sign-in required",
   description: "Executor needs a valid sign-in session to complete this action.",
   recovery: {
@@ -38,6 +37,32 @@ export const Unauthorized = UserFacingError.define({
     instructions:
       "Restore the user’s Executor session through the normal sign-in flow and retry the failed operation. If the session expires repeatedly, investigate session handling. Do not change the integration’s OAuth configuration to work around an Executor login failure.",
   },
+};
+/**
+ * No valid hosted session was supplied. `credential: "apiKey"` says the request presented an
+ * Executor API key that no longer works (revoked, expired or never issued), which no sign-in fixes;
+ * an app calling Executor's API with that key reports this text to the agent.
+ */
+export const Unauthorized = UserFacingError.define({
+  tag: "Unauthorized",
+  status: 401,
+  fields: { credential: Schema.optional(Schema.Literal("apiKey")) },
+  // Both texts are fixed, so the recorded message is the one shown.
+  recorded: ({ credential }) =>
+    credential === "apiKey" ? unknownApiKeyDescription : signInRequired.description,
+  presentation: ({ credential }) =>
+    credential === "apiKey"
+      ? {
+          title: "API key not accepted",
+          description: unknownApiKeyDescription,
+          recovery: {
+            action:
+              "Create a new token on the Tokens page, then connect it to the account that uses this key.",
+            instructions:
+              "The presented Executor API key is not usable. Do not retry with the same key. Ask the user to create a token on the Tokens page and connect it as an Executor API key account, with the organization's URL slug.",
+          },
+        }
+      : signInRequired,
 });
 /** Parsed Unauthorized failure. */
 export type Unauthorized = typeof Unauthorized.Type;
@@ -89,11 +114,15 @@ export interface ApiAccess {
   readonly key?: {
     readonly id: typeof ApiKeyId.Type;
   };
+  /** The OAuth grant an agent's API token carries; absent for an API key. */
+  readonly grant?: {
+    readonly id: GrantId;
+  };
 }
 
 /** Organization API grants; browser sessions and bearer grants never fall back to one another. */
-export class ApiAuthentication extends Context.Service<
-  ApiAuthentication,
+export class BearerAuthentication extends Context.Service<
+  BearerAuthentication,
   {
     /** The browser origin: dashboard, sign-in, cookies and Origin checks. */
     readonly origin: string;
@@ -106,11 +135,11 @@ export class ApiAuthentication extends Context.Service<
       organization?: OrganizationReference,
     ) => Effect.Effect<ApiAccess, Unauthorized | OrganizationForbidden | AuthenticationUnavailable>;
   }
->()("hosted/ApiAuthentication") {}
+>()("hosted/BearerAuthentication") {}
 
 /** Host-specific session lookup. Refresh belongs to Better Auth's browser endpoint. */
-export class Authentication extends Context.Service<
-  Authentication,
+export class SessionAuthentication extends Context.Service<
+  SessionAuthentication,
   {
     /** The browser origin: dashboard, sign-in, cookies and Origin checks. */
     readonly origin: string;
@@ -152,7 +181,7 @@ export class Authentication extends Context.Service<
      */
     readonly removeUser: (user: Viewer["userId"]) => Effect.Effect<void, AuthenticationUnavailable>;
   }
->()("hosted/Authentication") {}
+>()("hosted/SessionAuthentication") {}
 
 /**
  * Verified actor for browser sessions and bearer grants; absent for background setup. It is the
@@ -211,7 +240,7 @@ export type AuthCredentialKind = typeof AuthCredentialKind.Type;
  * - `insufficient_scope`: the credential's grant does not permit this action, app or tool.
  * - `insufficient_role`: the caller's role does not permit this administrative action.
  * - `resource_denied`: a member was refused by a check on the resource itself, such as an app or
- *   account not shared with them.
+ *   app not shared with them or another member's account.
  * - `app_not_found`: an app page's host or app does not exist.
  * - `unclassified`: a 401 or 403 that no check above recorded; it marks a gap to classify.
  */
@@ -243,9 +272,9 @@ export class CurrentPrincipal extends Context.Service<CurrentPrincipal, Principa
 ) {}
 
 /** Hosted identity boundary; resource permissions remain separate product checks. */
-export class RequireUser extends HttpApiMiddleware.Service<
-  RequireUser,
+export class RequireBrowserSession extends HttpApiMiddleware.Service<
+  RequireBrowserSession,
   { provides: CurrentPrincipal }
->()("hosted/RequireUser", {
+>()("hosted/RequireBrowserSession", {
   error: [Unauthorized, Forbidden, AuthenticationUnavailable],
 }) {}

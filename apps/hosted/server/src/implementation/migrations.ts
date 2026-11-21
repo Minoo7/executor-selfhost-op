@@ -9,12 +9,14 @@ import { SqlClient } from "effect/sql";
 import * as Migrator from "effect/sql/Migrator";
 import { migrateProvisioning } from "./provisioning-schema.ts";
 import { migrateGroups } from "./group-schema.ts";
-import { migrateResourceAccess } from "./resource-schema.ts";
+import { migrateResourceAccess, removeGroupAccountConnections } from "./resource-schema.ts";
 import { migrateOAuthClientAccess } from "./oauth-client-schema.ts";
 import { migrateOrganizationRemovals } from "./organization-removal-schema.ts";
 import { migrateApiKeyMemberships } from "./api-key-membership-schema.ts";
 import { queueExecutorAppUpgrades } from "./executor-app-upgrades.ts";
 import { migrateAppAccountLinks } from "./app-account-schema.ts";
+import { migrateToolCallLog } from "./tool-call-log.ts";
+import { migratePersonalAccounts } from "./personal-account-schema.ts";
 
 /**
  * Migration failures stop startup; callers must not log the driver's secret-bearing cause. The
@@ -132,6 +134,14 @@ const hostedProductMigrations = migrateProductSteps("private_hosted_migrations",
   // the profiles.
   "9_app_account_links": migrateAppAccountLinks,
   "10_org_mcp_instructions": migrateOrganizationMcpInstructions,
+  // Accounts are no longer shared with groups; pending sign-ins for one are refused. The running
+  // server already refuses a connection without an access record.
+  "11_group_account_connections": removeGroupAccountConnections,
+  // Additive: the tool call log, two new tables with no backfill; the running server never reads them.
+  "12_tool_call_log": migrateToolCallLog,
+  // Every shared account becomes one member's personal account; pending sign-ins for one are
+  // refused. The running server reads personal accounts as this leaves them.
+  "13_personal_accounts": migratePersonalAccounts,
 });
 
 /**

@@ -90,15 +90,20 @@ const toolDetail = (actor: Session, app: string, name: string) =>
     return request;
   });
 
-/** How a request read the tool listing, and whether it invoked the app, from its trace. */
-const listingRead = (traceId: string, label: string) =>
+/**
+ * How a request read the tool listing, and whether it invoked the app, from its trace. A trace
+ * arrives in pieces: the app's spans (`app.dispatch`) are exported by the app's Worker, apart from
+ * the host's. So the read waits until every span in `reads` has arrived, as `Telemetry.settled`
+ * asks: name `app.dispatch` there when the check expects the app to have been invoked.
+ */
+const listingRead = (traceId: string, label: string, reads: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const evidence = yield* Evidence,
       telemetry = yield* Telemetry;
     const spans = yield* telemetry.query(traceId).pipe(
       Effect.map((result) => result.data.map((row) => row.span)),
       Effect.flatMap((spans) =>
-        spans.some((span) => span.operationName === "sdk.tools.listing")
+        reads.every((name) => spans.some((span) => span.operationName === name))
           ? Effect.succeed(spans)
           : Effect.fail(new Error(`The ${label} trace has not arrived`)),
       ),
@@ -130,7 +135,9 @@ layer(HostedLive, { excludeTestServices: true })("Tools index cache", (it) => {
         const kept = yield* indexTools(actors.owner, app.id, "kept-index");
         expect(cold.names.length).toBeGreaterThan(0);
         expect(kept.names).toEqual(cold.names);
-        const keptIndex = yield* listingRead(kept.request.traceId, "kept-index");
+        const keptIndex = yield* listingRead(kept.request.traceId, "kept-index", [
+          "sdk.tools.listing",
+        ]);
         expect(keptIndex.cache).toBe("hit");
         expect(keptIndex.dispatched).toBe(false);
 
@@ -151,6 +158,19 @@ layer(HostedLive, { excludeTestServices: true })("Tools index cache", (it) => {
             {},
           ),
         );
+        // Connecting checks the key against Executor's API, so it is a real token of the owner's.
+        const secondToken = yield* body(
+          Schema.Struct({ id: Schema.String, key: Schema.String }),
+          yield* api.request(actors.owner, "POST", "/api/auth/api-key/create", {
+            name: "Second Executor key",
+            metadata: { organization: actors.organization.id },
+          }),
+        );
+        yield* Effect.addFinalizer(() =>
+          api
+            .request(actors.owner, "POST", "/api/auth/api-key/delete", { keyId: secondToken.id })
+            .pipe(Effect.orDie),
+        );
         const submitted = yield* api.request(
           actors.owner,
           "POST",
@@ -158,7 +178,7 @@ layer(HostedLive, { excludeTestServices: true })("Tools index cache", (it) => {
           {
             method: "apiKey",
             label: "Second Executor key",
-            fields: { token: "synthetic-second-key", organization: actors.organization.id },
+            fields: { token: secondToken.key, organization: actors.organization.id },
           },
         );
         expect(submitted.status, JSON.stringify(submitted.body)).toBe(200);
@@ -172,7 +192,10 @@ layer(HostedLive, { excludeTestServices: true })("Tools index cache", (it) => {
         expect(yield* linkedAccountIds(actors.owner, appPath)).toEqual([secondKey.id]);
         const revised = yield* indexTools(actors.owner, app.id, "revised-index");
         expect(revised.names).toEqual(cold.names);
-        const revisedListing = yield* listingRead(revised.request.traceId, "revised-listing");
+        const revisedListing = yield* listingRead(revised.request.traceId, "revised-listing", [
+          "sdk.tools.listing",
+          "app.dispatch",
+        ]);
         expect(revisedListing.dispatched).toBe(true);
 
         const [first, second, third] = yield* Effect.all(
@@ -203,7 +226,10 @@ layer(HostedLive, { excludeTestServices: true })("Tools index cache", (it) => {
         yield* linkAccount(actors.owner, appPath, "service", account);
         expect(yield* linkedAccountIds(actors.owner, appPath)).toEqual([account]);
         const tool = yield* toolDetail(actors.owner, app.id, cold.names[0] ?? "");
-        const keptTool = yield* listingRead(tool.traceId, "kept-tool");
+        const keptTool = yield* listingRead(tool.traceId, "kept-tool", [
+          "sdk.tools.listing",
+          "sdk.tools.get",
+        ]);
         expect(keptTool.cache).toBe("hit");
         expect(keptTool.source).toBe("listing");
         expect(keptTool.dispatched).toBe(false);

@@ -17,6 +17,7 @@ import {
   App,
   AppId,
   OwnerId,
+  ProviderId,
   HttpUrl,
   StorageError,
   publishingDomain,
@@ -33,7 +34,12 @@ import {
   OrganizationMcpInstructionsConflict,
   OrganizationMcpInstructionsUnavailable,
 } from "./organization-mcp-instructions.ts";
-import { AuthenticationUnavailable, Forbidden, Unauthorized, RequireUser } from "./auth.ts";
+import {
+  AuthenticationUnavailable,
+  Forbidden,
+  Unauthorized,
+  RequireBrowserSession,
+} from "./auth.ts";
 
 /** Better Auth organization identity; never a caller-selected SDK owner. */
 export const OrganizationId = Schema.NonEmptyString.pipe(Schema.brand("OrganizationId"));
@@ -188,6 +194,16 @@ export class OrganizationIcons extends Context.Service<
 export const Inventory = Schema.Struct({
   /** The accounts the caller linked to each listed app and may use. */
   links: Schema.Array(Schema.Struct({ app: AppId, account: AccountId })),
+  /** The app links of each listed app, shared by everyone using it, oldest first. */
+  appLinks: Schema.Array(
+    Schema.Struct({
+      app: AppId,
+      requirement: Schema.String,
+      account: AccountId,
+      provider: ProviderId,
+      label: Schema.String,
+    }),
+  ),
   apps: Schema.Array(App),
   /** Each account's checks by the apps listed here; reading them never runs a check. */
   accounts: Schema.Array(
@@ -219,7 +235,7 @@ export const HostedOrganization = HttpApiGroup.make("organization")
           OrganizationForbidden,
         ],
       },
-    ).middleware(RequireUser),
+    ).middleware(RequireBrowserSession),
   )
   .add(
     HttpApiEndpoint.post("uploadIcon", "/api/organizations/:organization/icon", {
@@ -227,14 +243,14 @@ export const HostedOrganization = HttpApiGroup.make("organization")
       payload: UploadedOrganizationIcon,
       success: Schema.Struct({ logo: OrganizationIconUrl }),
       error: [OrganizationIconInvalid, OrganizationIconUnavailable, OrganizationForbidden],
-    }).middleware(RequireUser),
+    }).middleware(RequireBrowserSession),
   )
   .add(
     HttpApiEndpoint.get("icon", "/api/organizations/:organization/icons/:key", {
       params: { organization: OrganizationReference, key: OrganizationIconKey },
       success: Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array()),
       error: [OrganizationIconUnavailable, OrganizationIconNotFound],
-    }).middleware(RequireUser),
+    }).middleware(RequireBrowserSession),
   )
   .add(
     HttpApiEndpoint.get("catalog", "/api/organizations/:organization/catalog", {
@@ -246,7 +262,7 @@ export const HostedOrganization = HttpApiGroup.make("organization")
       .annotate(RequiredAction, "read")
       .annotate(
         OpenApi.Description,
-        "List the app catalog: Executor's official apps, each installed directly with apps.install, which then asks for an account through the app's own providers. The whole catalog has over a thousand entries, so pass search, and limit, to keep the result small. To add a remote MCP server the catalog does not list, use apps.importCustom; for any other service, write an app with the Executor app's app-authoring skill.",
+        "List the app catalog: Executor's official apps, each installed with apps.install. On a self-hosted instance, an unfiltered result holding only the Executor app can mean the catalog is turned off. apps.install then asks for an account through the app's own providers. The whole catalog has over a thousand entries, so pass search, and limit, to keep the result small. To add a remote MCP server the catalog does not list, use apps.importCustom; for any other service, write an app with the Executor app's app-authoring skill.",
       ),
   )
   .add(
