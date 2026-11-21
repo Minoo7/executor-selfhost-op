@@ -1,3 +1,16 @@
+diff --git a/dist/Config.js b/dist/Config.js
+index 3413cdb..97167ee 100644
+--- a/dist/Config.js
++++ b/dist/Config.js
+@@ -77,7 +77,7 @@ export class ConfigError {
+     this.cause = cause;
+   }
+   get message() {
+-    return this.cause.toString();
++    return typeof this.cause?.toString === "function" && this.cause.toString !== Object.prototype.toString ? this.cause.toString() : globalThis.JSON.stringify(this.cause);
+   }
+   toString() {
+     return `ConfigError(${this.message})`;
 diff --git a/dist/JsonSchema.d.ts b/dist/JsonSchema.d.ts
 index 2187a62..ce6e24b 100644
 --- a/dist/JsonSchema.d.ts
